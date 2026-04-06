@@ -29,6 +29,7 @@ async function startServer() {
     socket.on("join", (userData) => {
       const roomId = userData.roomId || "default";
       socket.join(roomId);
+      (socket as any).roomId = roomId;
 
       if (!rooms[roomId]) rooms[roomId] = {};
       
@@ -38,6 +39,8 @@ async function startServer() {
         pos: userData.pos,
         angle: userData.angle,
         avatarConfig: userData.avatarConfig,
+        status: userData.status || 'available',
+        isPrivate: userData.isPrivate || false,
         isWalking: false,
         isSpeaking: false,
         roomId
@@ -51,12 +54,13 @@ async function startServer() {
     });
 
     socket.on("move", (moveData) => {
-      const user = Object.values(rooms).flatMap(r => Object.values(r)).find(u => u.id === socket.id);
-      if (user) {
+      const roomId = (socket as any).roomId;
+      if (roomId && rooms[roomId] && rooms[roomId][socket.id]) {
+        const user = rooms[roomId][socket.id];
         user.pos = moveData.pos;
         user.angle = moveData.angle;
         user.isWalking = moveData.isWalking;
-        socket.to(user.roomId).emit("user:moved", {
+        socket.to(roomId).emit("user:moved", {
           id: socket.id,
           pos: moveData.pos,
           angle: moveData.angle,
@@ -65,11 +69,26 @@ async function startServer() {
       }
     });
 
+    socket.on("status", (statusData) => {
+      const roomId = (socket as any).roomId;
+      if (roomId && rooms[roomId] && rooms[roomId][socket.id]) {
+        const user = rooms[roomId][socket.id];
+        user.status = statusData.status;
+        user.isPrivate = statusData.isPrivate;
+        socket.to(roomId).emit("user:status", {
+          id: socket.id,
+          status: statusData.status,
+          isPrivate: statusData.isPrivate
+        });
+      }
+    });
+
     socket.on("speaking", (isSpeaking) => {
-      const user = Object.values(rooms).flatMap(r => Object.values(r)).find(u => u.id === socket.id);
-      if (user) {
+      const roomId = (socket as any).roomId;
+      if (roomId && rooms[roomId] && rooms[roomId][socket.id]) {
+        const user = rooms[roomId][socket.id];
         user.isSpeaking = isSpeaking;
-        socket.to(user.roomId).emit("user:speaking", {
+        socket.to(roomId).emit("user:speaking", {
           id: socket.id,
           isSpeaking
         });

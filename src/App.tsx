@@ -24,6 +24,11 @@ import {
   MicOff,
   Users,
   MessageSquare,
+  Trash2,
+  Edit3,
+  Plus,
+  Check,
+  X,
   ShieldCheck
 } from 'lucide-react';
 
@@ -55,12 +60,17 @@ interface RemotePlayer {
   angle: number;
   isWalking: boolean;
   isSpeaking: boolean;
+  status: 'available' | 'busy' | 'focus';
+  isPrivate: boolean;
+  zone: string;
   avatarConfig: AvatarConfig;
   stream?: MediaStream;
 }
 
 const ZONES: Zone[] = [
-  { name: "Executive Suite", bounds: { left: 0, right: OFFICE_WIDTH, top: 0, bottom: 210 } },
+  { name: "Conference Room A", bounds: { left: 0, right: 300, top: 0, bottom: 210 } },
+  { name: "Conference Room B", bounds: { left: 300, right: 600, top: 0, bottom: 210 } },
+  { name: "Executive Suite", bounds: { left: 600, right: OFFICE_WIDTH, top: 0, bottom: 210 } },
   { name: "Pantry Area", bounds: { left: 850, right: OFFICE_WIDTH, top: 550, bottom: OFFICE_HEIGHT } },
   { name: "Reception", bounds: { left: 0, right: 320, top: 600, bottom: OFFICE_HEIGHT } },
   { name: "Central Hub", bounds: { left: 0, right: OFFICE_WIDTH, top: 300, bottom: 550 } },
@@ -151,9 +161,28 @@ const Avatar = ({ config, isWalking, isSpeaking }: { config: AvatarConfig; isWal
   );
 };
 
-const HUD = ({ zone, tasks, completedCount, pos, roomId }: { zone: string; tasks: any[]; completedCount: number; pos: Point; roomId: string }) => {
+interface Task {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask, onDeleteTask, onEditTask }: { 
+  zone: string; 
+  tasks: Task[]; 
+  completedCount: number; 
+  pos: Point; 
+  roomId: string;
+  onAddTask: (text: string) => void;
+  onToggleTask: (id: string) => void;
+  onDeleteTask: (id: string) => void;
+  onEditTask: (id: string, text: string) => void;
+}) => {
   const [time, setTime] = useState(new Date());
   const [showShareTooltip, setShowShareTooltip] = useState(false);
+  const [newTaskText, setNewTaskText] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -168,6 +197,26 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId }: { zone: string; tasks
     setTimeout(() => setShowShareTooltip(false), 2000);
   };
 
+  const handleAddTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newTaskText.trim()) {
+      onAddTask(newTaskText.trim());
+      setNewTaskText('');
+    }
+  };
+
+  const startEditing = (task: Task) => {
+    setEditingId(task.id);
+    setEditingText(task.text);
+  };
+
+  const saveEdit = () => {
+    if (editingId && editingText.trim()) {
+      onEditTask(editingId, editingText.trim());
+      setEditingId(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 pointer-events-none z-50">
       {/* Top Left: Status & Zone */}
@@ -175,19 +224,34 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId }: { zone: string; tasks
         <motion.div 
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="bg-black p-5 rounded-2xl shadow-2xl border-l-8 border-white w-64"
+          className="bg-black p-5 rounded-2xl shadow-2xl border-l-8 border-white w-72"
         >
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-3 h-3 text-white/40" />
               <h1 className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Workspace Room</h1>
             </div>
-            <button 
-              onClick={() => window.location.reload()}
-              className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
-            >
-              <LogOut className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => {
+                  const newRoom = prompt("Enter Room ID to switch:", roomId || "");
+                  if (newRoom && newRoom !== roomId) {
+                    window.location.search = `?room=${newRoom}`;
+                  }
+                }}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
+                title="Switch Room"
+              >
+                <Settings className="w-3 h-3" />
+              </button>
+              <button 
+                onClick={() => window.location.reload()}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
+                title="Logout"
+              >
+                <LogOut className="w-3 h-3" />
+              </button>
+            </div>
           </div>
           <p className="text-xl font-black text-white tracking-tight truncate">{roomId}</p>
         </motion.div>
@@ -196,7 +260,7 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId }: { zone: string; tasks
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ delay: 0.1 }}
-          className="bg-black p-5 rounded-2xl shadow-2xl border-l-8 border-white/20 w-64"
+          className="bg-black p-5 rounded-2xl shadow-2xl border-l-8 border-white/20 w-72"
         >
           <div className="flex items-center gap-2 mb-1">
             <MapPin className="w-3 h-3 text-white/40" />
@@ -209,7 +273,7 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId }: { zone: string; tasks
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ delay: 0.1 }}
-          className="bg-black p-5 rounded-2xl shadow-2xl w-64"
+          className="bg-black p-5 rounded-2xl shadow-2xl w-72 overflow-hidden"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -220,13 +284,64 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId }: { zone: string; tasks
               {completedCount}/{tasks.length}
             </span>
           </div>
-          <div className="space-y-3">
-            {tasks.map((task, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${task.done ? 'bg-white' : 'bg-white/20'}`} />
-                <span className={`text-xs font-medium ${task.done ? 'text-white/30 line-through' : 'text-white/80'}`}>
-                  {task.text}
-                </span>
+
+          <form onSubmit={handleAddTask} className="flex gap-2 mb-4">
+            <input 
+              type="text"
+              value={newTaskText}
+              onChange={(e) => setNewTaskText(e.target.value)}
+              placeholder="Add a task..."
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-white/30 transition-all"
+            />
+            <button type="submit" className="p-1.5 bg-white text-black rounded-lg hover:bg-slate-200 transition-colors">
+              <Plus className="w-4 h-4" />
+            </button>
+          </form>
+
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+            {tasks.length === 0 && (
+              <p className="text-[10px] text-white/20 italic text-center py-4">No tasks yet. Start your day!</p>
+            )}
+            {tasks.map((task) => (
+              <div key={task.id} className="group flex items-center gap-3 bg-white/5 p-2 rounded-xl border border-transparent hover:border-white/10 transition-all">
+                <button 
+                  onClick={() => onToggleTask(task.id)}
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${task.done ? 'bg-white border-white' : 'border-white/20 hover:border-white/40'}`}
+                >
+                  {task.done && <Check className="w-2.5 h-2.5 text-black" />}
+                </button>
+                
+                {editingId === task.id ? (
+                  <div className="flex-1 flex items-center gap-1">
+                    <input 
+                      autoFocus
+                      type="text"
+                      value={editingText}
+                      onChange={(e) => setEditingText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                      className="flex-1 bg-white/10 border-none rounded px-1 py-0.5 text-xs text-white focus:outline-none"
+                    />
+                    <button onClick={saveEdit} className="text-white hover:text-emerald-400">
+                      <Check className="w-3 h-3" />
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="text-white hover:text-rose-400">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className={`flex-1 text-xs font-medium transition-all ${task.done ? 'text-white/30 line-through' : 'text-white/80'}`}>
+                    {task.text}
+                  </span>
+                )}
+
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => startEditing(task)} className="p-1 text-white/40 hover:text-white transition-colors">
+                    <Edit3 className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => onDeleteTask(task.id)} className="p-1 text-white/40 hover:text-rose-400 transition-colors">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -544,11 +659,37 @@ const CharacterCustomizationModal = ({ onComplete }: { onComplete: (config: Avat
   );
 };
 
-const RemotePlayerAvatar = ({ player, localPos }: { player: RemotePlayer; localPos: Point; key?: string }) => {
+const RemotePlayerAvatar = ({ player, localPos, localIsPrivate, localZone }: { player: RemotePlayer; localPos: Point; localIsPrivate: boolean; localZone: string; key?: string }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isHovered, setIsHovered] = useState(false);
   const dist = Math.hypot(player.pos.x - localPos.x, player.pos.y - localPos.y);
-  const volume = Math.max(0, Math.min(1, Math.pow(1 - (dist / VOICE_RADIUS), 2)));
+  
+  // Meeting Room Isolation Logic:
+  // If either person is in a "Conference Room", they can only hear each other if they are in the SAME room.
+  const isMeetingRoom = (z: string) => z && z.startsWith("Conference Room");
+  const inSameMeetingRoom = isMeetingRoom(localZone) && localZone === player.zone;
+  const oneInMeetingRoom = isMeetingRoom(localZone) || isMeetingRoom(player.zone);
+  
+  // Private Bubble Logic: 
+  const inSameBubble = dist < 100;
+  const isMutedByPrivate = (player.isPrivate || localIsPrivate) && !inSameBubble;
+  
+  // Final Isolation Logic:
+  // 1. If one is in a meeting room but not the same one, they are muted.
+  // 2. If both are in the same meeting room, proximity still applies but maybe with a boost? 
+  //    Actually, let's make meeting rooms "Full Volume" if you are inside together.
+  
+  let volume = 0;
+  if (oneInMeetingRoom) {
+    if (inSameMeetingRoom) {
+      // Boosted volume for meeting rooms
+      volume = Math.max(0, Math.min(1, 1.2 - (dist / (VOICE_RADIUS * 1.5))));
+    } else {
+      volume = 0;
+    }
+  } else if (!isMutedByPrivate) {
+    volume = Math.max(0, Math.min(1, Math.pow(1 - (dist / VOICE_RADIUS), 2)));
+  }
 
   useEffect(() => {
     if (audioRef.current && player.stream) {
@@ -565,20 +706,29 @@ const RemotePlayerAvatar = ({ player, localPos }: { player: RemotePlayer; localP
       onMouseLeave={() => setIsHovered(false)}
       className="absolute z-[900] -ml-[30px] -mt-[30px] w-[60px] h-[60px]"
     >
+      {/* Private Bubble Visual */}
+      {player.isPrivate && (
+        <div className="absolute inset-0 -m-4 rounded-full border-2 border-dashed border-white/20 bg-white/5 animate-pulse" />
+      )}
+
       <AnimatePresence>
         {(isHovered || player.isSpeaking) && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full shadow-lg border border-slate-100 flex items-center gap-2"
+            className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black text-white px-3 py-1 rounded-full shadow-lg border border-white/10 flex items-center gap-2"
           >
-            <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider">{player.name}</span>
+            <div className={`w-2 h-2 rounded-full ${
+              player.status === 'available' ? 'bg-emerald-500' : 
+              player.status === 'busy' ? 'bg-amber-500' : 'bg-rose-500'
+            }`} />
+            <span className="text-[10px] font-black uppercase tracking-wider">{player.name}</span>
             {player.isSpeaking && (
               <motion.div 
                 animate={{ scale: [1, 1.2, 1] }} 
                 transition={{ repeat: Infinity, duration: 0.5 }}
-                className="w-2 h-2 bg-black rounded-full" 
+                className="w-2 h-2 bg-white rounded-full" 
               />
             )}
           </motion.div>
@@ -595,6 +745,8 @@ export default function App() {
   const [userName, setUserName] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
+  const [status, setStatus] = useState<'available' | 'busy' | 'focus'>('available');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [pos, setPos] = useState<Point>({ x: 100, y: 700 });
   const [angle, setAngle] = useState(180);
   const [isWalking, setIsWalking] = useState(false);
@@ -603,12 +755,7 @@ export default function App() {
   const [currentZone, setCurrentZone] = useState("Lobby");
   const [keys, setKeys] = useState<Record<string, boolean>>({});
   const [remotePlayers, setRemotePlayers] = useState<Record<string, RemotePlayer>>({});
-  const [tasks, setTasks] = useState([
-    { text: "Sync with Team", done: false, zone: "Central Hub", type: "laptop" },
-    { text: "Coffee Break", done: false, zone: "Pantry Area", type: "coffee" },
-    { text: "Strategic Review", done: false, zone: "Executive Suite", type: "laptop" },
-    { text: "Daily Sign-off", done: false, zone: "Reception", type: "clock" },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const socketRef = useRef<Socket | null>(null);
   const peersRef = useRef<Record<string, Peer.Instance>>({});
@@ -619,6 +766,33 @@ export default function App() {
   const handleJoin = (name: string, room: string) => {
     setUserName(name);
     setRoomId(room);
+  };
+
+  const handleAddTask = (text: string) => {
+    setTasks(prev => [...prev, { id: Date.now().toString(), text, done: false }]);
+  };
+
+  const handleToggleTask = (id: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  };
+
+  const handleDeleteTask = (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleEditTask = (id: string, text: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, text } : t));
+  };
+
+  const handleTogglePrivate = () => {
+    const next = !isPrivate;
+    setIsPrivate(next);
+    socketRef.current?.emit("status", { status, isPrivate: next });
+  };
+
+  const handleChangeStatus = (s: 'available' | 'busy' | 'focus') => {
+    setStatus(s);
+    socketRef.current?.emit("status", { status: s, isPrivate });
   };
 
   const checkCollision = (nx: number, ny: number) => {
@@ -677,39 +851,60 @@ export default function App() {
   useEffect(() => {
     if (!userName || !avatarConfig || !roomId) return;
 
+    console.log("Connecting to socket...", { userName, roomId });
     socketRef.current = io();
     const socket = socketRef.current;
 
     initVoice().then(() => {
-      socket.emit("join", { name: userName, roomId, pos: posRef.current, angle: 180, avatarConfig });
+      console.log("Voice initialized, joining room...");
+      socket.emit("join", { 
+        name: userName, 
+        roomId, 
+        pos: posRef.current, 
+        angle: 180, 
+        avatarConfig,
+        status,
+        isPrivate,
+        zone: currentZone
+      });
+    });
+
+    socket.on("connect", () => {
+      console.log("Socket connected:", socket.id);
     });
 
     socket.on("init", (users: Record<string, any>) => {
+      console.log("Received init users:", Object.keys(users));
       const others = { ...users };
-      delete others[socket.id!];
+      if (socket.id) delete others[socket.id];
       setRemotePlayers(others);
       
-      // Create peers for existing users
+      // Newcomer initiates to everyone already in the room
       if (localStreamRef.current) {
         Object.keys(others).forEach(id => {
-          const peer = createPeer(id, id, localStreamRef.current!);
-          peersRef.current[id] = peer;
+          if (!peersRef.current[id]) {
+            console.log("Initiating peer to:", id);
+            const peer = createPeer(id, id, localStreamRef.current!);
+            peersRef.current[id] = peer;
+          }
         });
       }
     });
 
     socket.on("user:joined", (user: any) => {
+      console.log("User joined:", user.id);
       setRemotePlayers(prev => ({ ...prev, [user.id]: user }));
-      if (localStreamRef.current) {
-        const peer = createPeer(user.id, user.id, localStreamRef.current!);
-        peersRef.current[user.id] = peer;
-      }
+      // We don't initiate here; we wait for their signal
     });
 
     socket.on("user:moved", (data: any) => {
       setRemotePlayers(prev => {
         if (!prev[data.id]) return prev;
-        return { ...prev, [data.id]: { ...prev[data.id], ...data } };
+        const zone = ZONES.find(z => 
+          data.pos.x >= z.bounds.left && data.pos.x <= z.bounds.right && 
+          data.pos.y >= z.bounds.top && data.pos.y <= z.bounds.bottom
+        );
+        return { ...prev, [data.id]: { ...prev[data.id], ...data, zone: zone?.name || "Lobby" } };
       });
     });
 
@@ -720,7 +915,15 @@ export default function App() {
       });
     });
 
+    socket.on("user:status", (data: any) => {
+      setRemotePlayers(prev => {
+        if (!prev[data.id]) return prev;
+        return { ...prev, [data.id]: { ...prev[data.id], status: data.status, isPrivate: data.isPrivate } };
+      });
+    });
+
     socket.on("user:left", (id: string) => {
+      console.log("User left:", id);
       setRemotePlayers(prev => {
         const next = { ...prev };
         delete next[id];
@@ -733,20 +936,24 @@ export default function App() {
     });
 
     socket.on("signal", (data: any) => {
+      console.log("Received signal from:", data.from);
       if (peersRef.current[data.from]) {
         peersRef.current[data.from].signal(data.signal);
       } else if (localStreamRef.current) {
+        console.log("Creating non-initiator peer for:", data.from);
         const peer = addPeer(data.signal, data.from, localStreamRef.current!);
         peersRef.current[data.from] = peer;
       }
     });
 
     return () => {
+      console.log("Cleaning up socket connection...");
       socket.disconnect();
-      (Object.values(peersRef.current) as Peer.Instance[]).forEach(p => p.destroy());
+      Object.values(peersRef.current).forEach(p => (p as any).destroy());
+      peersRef.current = {};
       localStreamRef.current?.getTracks().forEach(t => t.stop());
     };
-  }, [userName]);
+  }, [userName, roomId, avatarConfig]);
 
   const updateZone = (x: number, y: number) => {
     const zone = ZONES.find(z => 
@@ -781,7 +988,13 @@ export default function App() {
 
       posRef.current = { x: finalX, y: finalY };
       setPos({ ...posRef.current });
-      updateZone(finalX, finalY);
+      
+      const zone = ZONES.find(z => 
+        finalX >= z.bounds.left && finalX <= z.bounds.right && 
+        finalY >= z.bounds.top && finalY <= z.bounds.bottom
+      );
+      const newZoneName = zone?.name || "Lobby";
+      if (newZoneName !== currentZone) setCurrentZone(newZoneName);
 
       const moveAngle = Math.atan2(dy, dx) * 180 / Math.PI;
       const newAngle = moveAngle + 90;
@@ -846,7 +1059,17 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#000000] flex items-center justify-center overflow-hidden font-sans selection:bg-white/20">
-      <HUD zone={currentZone} tasks={tasks} completedCount={completedCount} pos={pos} roomId={roomId} />
+      <HUD 
+        zone={currentZone} 
+        tasks={tasks} 
+        completedCount={completedCount} 
+        pos={pos} 
+        roomId={roomId} 
+        onAddTask={handleAddTask}
+        onToggleTask={handleToggleTask}
+        onDeleteTask={handleDeleteTask}
+        onEditTask={handleEditTask}
+      />
       <UserMenu name={userName} playersCount={Object.keys(remotePlayers).length + 1} />
       
       <div 
@@ -886,7 +1109,7 @@ export default function App() {
 
         {/* Other Players */}
         {(Object.values(remotePlayers) as RemotePlayer[]).map(player => (
-          <RemotePlayerAvatar key={player.id} player={player} localPos={pos} />
+          <RemotePlayerAvatar key={player.id} player={player} localPos={pos} localIsPrivate={isPrivate} localZone={currentZone} />
         ))}
 
         {/* Doors */}
@@ -900,6 +1123,10 @@ export default function App() {
           onMouseLeave={() => setIsHovered(false)}
           className="absolute z-[1000] -ml-[30px] -mt-[30px] w-[60px] h-[60px]"
         >
+          {/* Private Bubble Visual */}
+          {isPrivate && (
+            <div className="absolute inset-0 -m-4 rounded-full border-2 border-dashed border-black/40 bg-black/5 animate-pulse" />
+          )}
           {/* Voice Radius Indicator */}
           <AnimatePresence>
             {isSpeaking && (
@@ -931,8 +1158,28 @@ export default function App() {
         </motion.div>
       </div>
 
-      {/* Push to Talk Hint */}
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4">
+      {/* Push to Talk Hint & Status Controls */}
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 pointer-events-auto">
+        <div className="bg-black p-1.5 rounded-2xl flex items-center gap-1 border border-white/10 shadow-2xl">
+          {(['available', 'busy', 'focus'] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => handleChangeStatus(s)}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${status === s ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}
+            >
+              {s}
+            </button>
+          ))}
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <button
+            onClick={handleTogglePrivate}
+            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isPrivate ? 'bg-rose-600 text-white' : 'text-white/40 hover:text-white'}`}
+          >
+            <ShieldCheck className="w-3 h-3" />
+            {isPrivate ? 'Private' : 'Public'}
+          </button>
+        </div>
+
         <div className={`flex items-center gap-3 px-6 py-3 rounded-2xl backdrop-blur-md border transition-all ${isSpeaking ? 'bg-black text-white shadow-xl' : 'bg-white/90 border-slate-200 text-slate-500'}`}>
           {isSpeaking ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
           <span className="text-sm font-black uppercase tracking-widest">Hold Space to Talk</span>
