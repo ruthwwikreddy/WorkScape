@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { io, Socket } from 'socket.io-client';
+import Peer from 'simple-peer';
 import { 
   Monitor, 
   Coffee, 
@@ -17,7 +19,12 @@ import {
   LogOut,
   ChevronRight,
   Zap,
-  Briefcase
+  Briefcase,
+  Mic,
+  MicOff,
+  Users,
+  MessageSquare,
+  ShieldCheck
 } from 'lucide-react';
 
 // --- Constants ---
@@ -25,11 +32,32 @@ const OFFICE_WIDTH = 1200;
 const OFFICE_HEIGHT = 800;
 const AVATAR_RADIUS = 20;
 const SPEED = 6;
+const VOICE_RADIUS = 150;
 
 // --- Types ---
 interface Point { x: number; y: number; }
 interface Rect { left: number; right: number; top: number; bottom: number; }
 interface Zone { name: string; bounds: Rect; }
+
+interface AvatarConfig {
+  skinColor: string;
+  hairStyle: 'none' | 'short' | 'long' | 'pompadour';
+  hairColor: string;
+  shirtColor: string;
+  pantsColor: string;
+  bodyType: 'slim' | 'normal' | 'wide';
+}
+
+interface RemotePlayer {
+  id: string;
+  name: string;
+  pos: Point;
+  angle: number;
+  isWalking: boolean;
+  isSpeaking: boolean;
+  avatarConfig: AvatarConfig;
+  stream?: MediaStream;
+}
 
 const ZONES: Zone[] = [
   { name: "Executive Suite", bounds: { left: 0, right: OFFICE_WIDTH, top: 0, bottom: 210 } },
@@ -55,139 +83,670 @@ const WALLS: Rect[] = [
 
 // --- Components ---
 
-const HUD = ({ zone, tasks, completedCount, pos }: { zone: string; tasks: any[]; completedCount: number; pos: Point }) => (
-  <div className="fixed top-6 left-6 z-50 flex flex-col gap-4 pointer-events-none">
-    <motion.div 
-      initial={{ x: -20, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      className="bg-white/90 backdrop-blur-md p-5 rounded-2xl shadow-2xl border-l-8 border-rose-600 w-64 pointer-events-auto"
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <MapPin className="w-3 h-3 text-slate-400" />
-        <h1 className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Current Zone</h1>
-      </div>
-      <p className="text-xl font-black text-slate-800 tracking-tight">{zone}</p>
-    </motion.div>
+const Avatar = ({ config, isWalking, isSpeaking }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean }) => {
+  const bodyWidth = config.bodyType === 'slim' ? 32 : config.bodyType === 'wide' ? 48 : 40;
+  
+  return (
+    <div className={`relative flex items-center justify-center transition-all duration-300 ${isWalking ? 'animate-bounce' : ''}`} style={{ width: 60, height: 60 }}>
+      {/* Speaking Indicator Ring */}
+      {isSpeaking && (
+        <motion.div 
+          animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }}
+          transition={{ repeat: Infinity, duration: 1 }}
+          className="absolute inset-0 rounded-full ring-4 ring-black ring-offset-2"
+        />
+      )}
+      
+      {/* Shadow */}
+      <div className="absolute bottom-0 w-8 h-2 bg-black/10 rounded-full blur-[2px]" />
 
-    <motion.div 
-      initial={{ x: -20, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ delay: 0.1 }}
-      className="bg-white/90 backdrop-blur-md p-5 rounded-2xl shadow-2xl w-64 pointer-events-auto"
-    >
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daily Tasks</h2>
-        </div>
-        <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-full font-bold text-slate-600">
-          {completedCount}/{tasks.length}
-        </span>
-      </div>
-      <div className="space-y-3">
-        {tasks.map((task, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <div className={`w-2 h-2 rounded-full ${task.done ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-            <span className={`text-xs font-medium ${task.done ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
-              {task.text}
-            </span>
-          </div>
-        ))}
-      </div>
-    </motion.div>
+      {/* Body Parts Container */}
+      <div className="relative flex flex-col items-center">
+        {/* Hair */}
+        {config.hairStyle !== 'none' && (
+          <div 
+            className="absolute -top-1 z-30 rounded-full"
+            style={{ 
+              backgroundColor: config.hairColor,
+              width: 28,
+              height: config.hairStyle === 'short' ? 14 : config.hairStyle === 'long' ? 24 : 20,
+              top: config.hairStyle === 'pompadour' ? -8 : -2
+            }}
+          />
+        )}
 
-    {/* Minimap */}
-    <motion.div
-      initial={{ y: 20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ delay: 0.2 }}
-      className="bg-slate-900/80 backdrop-blur-md p-2 rounded-xl shadow-2xl w-48 h-32 relative overflow-hidden border border-white/10 pointer-events-auto"
-    >
-      <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:10px_10px]" />
-      {/* Character Dot */}
-      <motion.div 
-        animate={{ 
-          left: (pos.x / OFFICE_WIDTH) * 100 + '%', 
-          top: (pos.y / OFFICE_HEIGHT) * 100 + '%' 
-        }}
-        className="absolute w-2 h-2 bg-rose-500 rounded-full shadow-[0_0_10px_#f43f5e] z-10 -translate-x-1/2 -translate-y-1/2"
-      />
-      {/* Simple Wall Outlines */}
-      {WALLS.map((w, i) => (
+        {/* Head */}
         <div 
-          key={i} 
-          className="absolute bg-white/20"
+          className="w-7 h-7 rounded-full z-20 shadow-sm border border-black/5"
+          style={{ backgroundColor: config.skinColor }}
+        >
+          {/* Eyes */}
+          <div className="absolute top-2 left-1.5 w-1 h-1 bg-slate-800 rounded-full" />
+          <div className="absolute top-2 right-1.5 w-1 h-1 bg-slate-800 rounded-full" />
+        </div>
+
+        {/* Torso / Shirt */}
+        <div 
+          className="z-10 -mt-1 rounded-t-lg shadow-sm border border-black/5 transition-all"
           style={{ 
-            left: (w.left / OFFICE_WIDTH) * 100 + '%', 
-            top: (w.top / OFFICE_HEIGHT) * 100 + '%',
-            width: ((w.right - w.left) / OFFICE_WIDTH) * 100 + '%',
-            height: ((w.bottom - w.top) / OFFICE_HEIGHT) * 100 + '%'
+            backgroundColor: config.shirtColor,
+            width: bodyWidth,
+            height: 24
           }}
         />
-      ))}
-    </motion.div>
-  </div>
-);
 
-const UserMenu = () => (
+        {/* Legs / Pants */}
+        <div className="flex gap-1 -mt-0.5">
+          <div 
+            className="w-3 h-4 rounded-b-sm shadow-sm border border-black/5"
+            style={{ backgroundColor: config.pantsColor }}
+          />
+          <div 
+            className="w-3 h-4 rounded-b-sm shadow-sm border border-black/5"
+            style={{ backgroundColor: config.pantsColor }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HUD = ({ zone, tasks, completedCount, pos, roomId }: { zone: string; tasks: any[]; completedCount: number; pos: Point; roomId: string }) => {
+  const [time, setTime] = useState(new Date());
+  const [showShareTooltip, setShowShareTooltip] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const copyInvite = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomId);
+    navigator.clipboard.writeText(url.toString());
+    setShowShareTooltip(true);
+    setTimeout(() => setShowShareTooltip(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 pointer-events-none z-50">
+      {/* Top Left: Status & Zone */}
+      <div className="absolute top-6 left-6 flex flex-col gap-4 pointer-events-auto">
+        <motion.div 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          className="bg-black p-5 rounded-2xl shadow-2xl border-l-8 border-white w-64"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-3 h-3 text-white/40" />
+              <h1 className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Workspace Room</h1>
+            </div>
+            <button 
+              onClick={() => window.location.reload()}
+              className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
+            >
+              <LogOut className="w-3 h-3" />
+            </button>
+          </div>
+          <p className="text-xl font-black text-white tracking-tight truncate">{roomId}</p>
+        </motion.div>
+
+        <motion.div 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="bg-black p-5 rounded-2xl shadow-2xl border-l-8 border-white/20 w-64"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <MapPin className="w-3 h-3 text-white/40" />
+            <h1 className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Current Zone</h1>
+          </div>
+          <p className="text-xl font-black text-white tracking-tight">{zone}</p>
+        </motion.div>
+
+        <motion.div 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="bg-black p-5 rounded-2xl shadow-2xl w-64"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-white" />
+              <h2 className="text-xs font-bold text-white/60 uppercase tracking-wider">Daily Tasks</h2>
+            </div>
+            <span className="text-[10px] bg-white/10 px-2 py-1 rounded-full font-bold text-white">
+              {completedCount}/{tasks.length}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {tasks.map((task, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${task.done ? 'bg-white' : 'bg-white/20'}`} />
+                <span className={`text-xs font-medium ${task.done ? 'text-white/30 line-through' : 'text-white/80'}`}>
+                  {task.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Share Button */}
+        <motion.button 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          onClick={copyInvite}
+          className="group relative bg-white text-black p-4 rounded-2xl shadow-xl hover:bg-slate-100 transition-all flex items-center gap-3 overflow-hidden"
+        >
+          <div className="w-8 h-8 bg-black/5 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Users className="w-4 h-4" />
+          </div>
+          <div className="text-left">
+            <p className="text-[10px] font-black text-black/40 uppercase tracking-tighter leading-none mb-1">Collaborate</p>
+            <p className="text-sm font-bold leading-none">Invite Teammates</p>
+          </div>
+          <AnimatePresence>
+            {showShareTooltip && (
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="absolute inset-0 bg-black text-white flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span className="text-xs font-black uppercase">Link Copied!</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.button>
+      </div>
+
+      {/* Bottom Right: Clock */}
+      <div className="absolute bottom-8 right-8 flex items-center gap-6 pointer-events-auto">
+        <div className="bg-black px-6 py-4 rounded-[24px] shadow-xl border border-white/10 flex items-center gap-4">
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">Current Time</span>
+            <span className="text-xl font-black text-white tabular-nums leading-none">
+              {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <div className="w-px h-8 bg-white/10" />
+          <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center">
+            <Clock className="w-5 h-5 text-white/40" />
+          </div>
+        </div>
+      </div>
+
+      {/* Minimap */}
+      <div className="absolute bottom-8 left-8 pointer-events-auto">
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="bg-black/90 backdrop-blur-md p-2 rounded-xl shadow-2xl w-48 h-32 relative overflow-hidden border border-white/10"
+        >
+          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:10px_10px]" />
+          {/* Character Dot */}
+          <motion.div 
+            animate={{ 
+              left: (pos.x / OFFICE_WIDTH) * 100 + '%', 
+              top: (pos.y / OFFICE_HEIGHT) * 100 + '%' 
+            }}
+            className="absolute w-2 h-2 bg-white rounded-full shadow-[0_0_10px_#fff] z-10 -translate-x-1/2 -translate-y-1/2"
+          />
+          {/* Simple Wall Outlines */}
+          {WALLS.map((w, i) => (
+            <div 
+              key={i} 
+              className="absolute bg-white/10"
+              style={{ 
+                left: (w.left / OFFICE_WIDTH) * 100 + '%', 
+                top: (w.top / OFFICE_HEIGHT) * 100 + '%',
+                width: ((w.right - w.left) / OFFICE_WIDTH) * 100 + '%',
+                height: ((w.bottom - w.top) / OFFICE_HEIGHT) * 100 + '%'
+              }}
+            />
+          ))}
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+const UserMenu = ({ name, playersCount }: { name: string; playersCount: number }) => (
   <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
-    <div className="bg-white/90 backdrop-blur-md p-2 rounded-full shadow-lg flex items-center gap-3 pr-5 border border-white/50">
-      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-rose-500 to-orange-400 flex items-center justify-center text-white shadow-inner">
+    <div className="bg-black p-2 rounded-full shadow-lg flex items-center gap-3 pr-5 border border-white/10">
+      <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-black shadow-inner">
         <User className="w-5 h-5" />
       </div>
       <div>
-        <p className="text-sm font-bold text-slate-800 leading-none tracking-tight">Senior Architect</p>
+        <p className="text-[10px] font-bold text-white/40 uppercase tracking-tighter leading-none mb-1">Workspace Member</p>
+        <p className="text-sm font-bold text-white leading-none">{name}</p>
       </div>
     </div>
-    <button className="bg-white/90 backdrop-blur-md p-3 rounded-full shadow-lg hover:bg-rose-50 transition-colors text-slate-400 hover:text-rose-500">
-      <Bell className="w-5 h-5" />
-    </button>
-    <button className="bg-white/90 backdrop-blur-md p-3 rounded-full shadow-lg hover:bg-slate-100 transition-colors text-slate-400">
-      <Settings className="w-5 h-5" />
-    </button>
+    <div className="bg-black p-3 rounded-full shadow-lg flex items-center gap-2 px-4 border border-white/10">
+      <Users className="w-4 h-4 text-white/40" />
+      <span className="text-xs font-bold text-white">{playersCount}</span>
+    </div>
   </div>
 );
 
-const InteractionPrompt = ({ text }: { text: string }) => (
-  <motion.div 
-    initial={{ y: 20, opacity: 0 }}
-    animate={{ y: 0, opacity: 1 }}
-    exit={{ y: 20, opacity: 0 }}
-    className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[2000] bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10"
-  >
-    <div className="w-6 h-6 bg-white/20 rounded flex items-center justify-center font-bold text-xs">E</div>
-    <span className="text-sm font-bold tracking-wide">{text}</span>
-  </motion.div>
-);
+const EntryModal = ({ onJoin }: { onJoin: (name: string, roomId: string) => void }) => {
+  const [name, setName] = useState('');
+  const [roomId, setRoomId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('room') || '';
+  });
+
+  return (
+    <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-xl">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white p-10 rounded-[32px] shadow-2xl w-full max-w-md"
+      >
+        <div className="flex justify-center mb-8">
+          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center shadow-xl">
+            <Briefcase className="w-10 h-10 text-white" />
+          </div>
+        </div>
+        <h2 className="text-3xl font-black text-black text-center mb-2 tracking-tight">WorkSpace</h2>
+        <p className="text-slate-500 text-center mb-8 font-medium">Join a room to start collaborating</p>
+        
+        <div className="space-y-4 mb-6">
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Your Name</label>
+            <input 
+              autoFocus
+              type="text" 
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Alex Rivera"
+              className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-black focus:outline-none text-lg font-bold text-black transition-all"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Room ID</label>
+            <input 
+              type="text" 
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              placeholder="e.g. design-team"
+              className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-black focus:outline-none text-lg font-bold text-black transition-all"
+            />
+          </div>
+        </div>
+
+        <button 
+          disabled={!name.trim() || !roomId.trim()}
+          onClick={() => onJoin(name.trim(), roomId.trim())}
+          className="w-full py-4 bg-black hover:bg-slate-900 disabled:bg-slate-200 disabled:cursor-not-allowed text-white rounded-2xl font-black text-lg shadow-xl transition-all active:scale-[0.98]"
+        >
+          Join Workspace
+        </button>
+      </motion.div>
+    </div>
+  );
+};
+
+const CharacterCustomizationModal = ({ onComplete }: { onComplete: (config: AvatarConfig) => void }) => {
+  const [config, setConfig] = useState<AvatarConfig>(() => {
+    const saved = localStorage.getItem('avatarConfig');
+    return saved ? JSON.parse(saved) : {
+      skinColor: '#f3c9b1',
+      hairStyle: 'short',
+      hairColor: '#4a2c2a',
+      shirtColor: '#000000',
+      pantsColor: '#1e293b',
+      bodyType: 'normal'
+    };
+  });
+
+  const skinColors = ['#f3c9b1', '#e0ac69', '#8d5524', '#c68642', '#ffdbac'];
+  const hairColors = ['#4a2c2a', '#2c1e1e', '#d6b37a', '#a5a5a5', '#000000'];
+  const shirtColors = ['#000000', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#ffffff'];
+  const pantsColors = ['#1e293b', '#334155', '#475569', '#1e1b4b', '#000000'];
+  const hairStyles: AvatarConfig['hairStyle'][] = ['none', 'short', 'long', 'pompadour'];
+  const bodyTypes: AvatarConfig['bodyType'][] = ['slim', 'normal', 'wide'];
+
+  const handleComplete = () => {
+    localStorage.setItem('avatarConfig', JSON.stringify(config));
+    onComplete(config);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl flex flex-col md:flex-row overflow-hidden"
+      >
+        {/* Preview Section */}
+        <div className="md:w-1/2 bg-slate-50 p-12 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-100">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-black text-black tracking-tight">Customize Your Look</h2>
+            <p className="text-slate-500 font-medium">Design your digital presence</p>
+          </div>
+          
+          <div className="scale-[2.5] mb-12">
+            <Avatar config={config} isWalking={false} isSpeaking={false} />
+          </div>
+
+          <button 
+            onClick={() => setConfig({
+              ...config,
+              skinColor: skinColors[Math.floor(Math.random() * skinColors.length)],
+              hairColor: hairColors[Math.floor(Math.random() * hairColors.length)],
+              shirtColor: shirtColors[Math.floor(Math.random() * shirtColors.length)],
+              pantsColor: pantsColors[Math.floor(Math.random() * pantsColors.length)],
+              hairStyle: hairStyles[Math.floor(Math.random() * hairStyles.length)],
+              bodyType: bodyTypes[Math.floor(Math.random() * bodyTypes.length)]
+            })}
+            className="flex items-center gap-2 text-black font-bold hover:text-slate-700 transition-colors"
+          >
+            <Zap className="w-4 h-4" />
+            Randomize
+          </button>
+        </div>
+
+        {/* Options Section */}
+        <div className="md:w-1/2 p-10 overflow-y-auto max-h-[80vh]">
+          <div className="space-y-8">
+            {/* Skin Color */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Skin Tone</h3>
+              <div className="flex flex-wrap gap-3">
+                {skinColors.map(color => (
+                  <button 
+                    key={color}
+                    onClick={() => setConfig({ ...config, skinColor: color })}
+                    className={`w-10 h-10 rounded-full border-4 transition-all ${config.skinColor === color ? 'border-black scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </section>
+
+            {/* Hair Style */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Hairstyle</h3>
+              <div className="flex flex-wrap gap-2">
+                {hairStyles.map(style => (
+                  <button 
+                    key={style}
+                    onClick={() => setConfig({ ...config, hairStyle: style })}
+                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.hairStyle === style ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* Hair Color */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Hair Color</h3>
+              <div className="flex flex-wrap gap-3">
+                {hairColors.map(color => (
+                  <button 
+                    key={color}
+                    onClick={() => setConfig({ ...config, hairColor: color })}
+                    className={`w-8 h-8 rounded-full border-4 transition-all ${config.hairColor === color ? 'border-black scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </section>
+
+            {/* Shirt Color */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Shirt Color</h3>
+              <div className="flex flex-wrap gap-3">
+                {shirtColors.map(color => (
+                  <button 
+                    key={color}
+                    onClick={() => setConfig({ ...config, shirtColor: color })}
+                    className={`w-8 h-8 rounded-full border-4 transition-all ${config.shirtColor === color ? 'border-black scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </section>
+
+            {/* Body Type */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Body Type</h3>
+              <div className="flex flex-wrap gap-2">
+                {bodyTypes.map(type => (
+                  <button 
+                    key={type}
+                    onClick={() => setConfig({ ...config, bodyType: type })}
+                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.bodyType === type ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <button 
+            onClick={handleComplete}
+            className="w-full mt-12 py-5 bg-black hover:bg-slate-900 text-white rounded-2xl font-black text-lg shadow-xl transition-all active:scale-[0.98]"
+          >
+            Enter Workspace
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const RemotePlayerAvatar = ({ player, localPos }: { player: RemotePlayer; localPos: Point; key?: string }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const dist = Math.hypot(player.pos.x - localPos.x, player.pos.y - localPos.y);
+  const volume = Math.max(0, Math.min(1, Math.pow(1 - (dist / VOICE_RADIUS), 2)));
+
+  useEffect(() => {
+    if (audioRef.current && player.stream) {
+      audioRef.current.srcObject = player.stream;
+      audioRef.current.volume = volume;
+    }
+  }, [player.stream, volume]);
+
+  return (
+    <motion.div
+      animate={{ x: player.pos.x, y: player.pos.y, rotate: player.angle }}
+      transition={{ type: 'spring', damping: 25, stiffness: 200, mass: 0.5 }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="absolute z-[900] -ml-[30px] -mt-[30px] w-[60px] h-[60px]"
+    >
+      <AnimatePresence>
+        {(isHovered || player.isSpeaking) && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full shadow-lg border border-slate-100 flex items-center gap-2"
+          >
+            <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider">{player.name}</span>
+            {player.isSpeaking && (
+              <motion.div 
+                animate={{ scale: [1, 1.2, 1] }} 
+                transition={{ repeat: Infinity, duration: 0.5 }}
+                className="w-2 h-2 bg-black rounded-full" 
+              />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <Avatar config={player.avatarConfig} isWalking={player.isWalking} isSpeaking={player.isSpeaking} />
+      <audio ref={audioRef} autoPlay />
+    </motion.div>
+  );
+};
 
 export default function App() {
+  const [userName, setUserName] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
   const [pos, setPos] = useState<Point>({ x: 100, y: 700 });
   const [angle, setAngle] = useState(180);
   const [isWalking, setIsWalking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [currentZone, setCurrentZone] = useState("Lobby");
   const [keys, setKeys] = useState<Record<string, boolean>>({});
+  const [remotePlayers, setRemotePlayers] = useState<Record<string, RemotePlayer>>({});
   const [tasks, setTasks] = useState([
-    { text: "Check morning emails", done: false, zone: "Central Hub", type: "laptop" },
-    { text: "Grab a fresh espresso", done: false, zone: "Pantry Area", type: "coffee" },
-    { text: "Review Executive 01 plans", done: false, zone: "Executive Suite", type: "laptop" },
-    { text: "Clock out for the day", done: false, zone: "Reception", type: "clock" },
+    { text: "Sync with Team", done: false, zone: "Central Hub", type: "laptop" },
+    { text: "Coffee Break", done: false, zone: "Pantry Area", type: "coffee" },
+    { text: "Strategic Review", done: false, zone: "Executive Suite", type: "laptop" },
+    { text: "Daily Sign-off", done: false, zone: "Reception", type: "clock" },
   ]);
-  const [interaction, setInteraction] = useState<string | null>(null);
 
+  const socketRef = useRef<Socket | null>(null);
+  const peersRef = useRef<Record<string, Peer.Instance>>({});
+  const localStreamRef = useRef<MediaStream | null>(null);
   const requestRef = useRef<number>(null);
   const posRef = useRef<Point>({ x: 100, y: 700 });
+
+  const handleJoin = (name: string, room: string) => {
+    setUserName(name);
+    setRoomId(room);
+  };
 
   const checkCollision = (nx: number, ny: number) => {
     const r = 18;
     if (nx < r || nx > OFFICE_WIDTH - r || ny < r || ny > OFFICE_HEIGHT - r) return true;
-    
     const p = { left: nx - r, right: nx + r, top: ny - r, bottom: ny + r };
-    
-    // Wall collisions
     if (WALLS.some(w => !(p.right < w.left || p.left > w.right || p.bottom < w.top || p.top > w.bottom))) return true;
     
+    // Player collision
+    const otherPlayers = Object.values(remotePlayers) as RemotePlayer[];
+    if (otherPlayers.some(op => Math.hypot(nx - op.pos.x, ny - op.pos.y) < 40)) return true;
+
     return false;
   };
+
+  const initVoice = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      // Initially mute
+      stream.getAudioTracks().forEach(track => track.enabled = false);
+    } catch (err) {
+      console.error("Mic access denied", err);
+    }
+  };
+
+  const createPeer = (userId: string, socketId: string, stream: MediaStream) => {
+    const peer = new Peer({ initiator: true, trickle: false, stream });
+    peer.on("signal", (signal) => {
+      socketRef.current?.emit("signal", { to: socketId, signal });
+    });
+    peer.on("stream", (remoteStream) => {
+      setRemotePlayers(prev => ({
+        ...prev,
+        [socketId]: { ...prev[socketId], stream: remoteStream }
+      }));
+    });
+    return peer;
+  };
+
+  const addPeer = (incomingSignal: any, socketId: string, stream: MediaStream) => {
+    const peer = new Peer({ initiator: false, trickle: false, stream });
+    peer.on("signal", (signal) => {
+      socketRef.current?.emit("signal", { to: socketId, signal });
+    });
+    peer.on("stream", (remoteStream) => {
+      setRemotePlayers(prev => ({
+        ...prev,
+        [socketId]: { ...prev[socketId], stream: remoteStream }
+      }));
+    });
+    peer.signal(incomingSignal);
+    return peer;
+  };
+
+  useEffect(() => {
+    if (!userName || !avatarConfig || !roomId) return;
+
+    socketRef.current = io();
+    const socket = socketRef.current;
+
+    initVoice().then(() => {
+      socket.emit("join", { name: userName, roomId, pos: posRef.current, angle: 180, avatarConfig });
+    });
+
+    socket.on("init", (users: Record<string, any>) => {
+      const others = { ...users };
+      delete others[socket.id!];
+      setRemotePlayers(others);
+      
+      // Create peers for existing users
+      if (localStreamRef.current) {
+        Object.keys(others).forEach(id => {
+          const peer = createPeer(id, id, localStreamRef.current!);
+          peersRef.current[id] = peer;
+        });
+      }
+    });
+
+    socket.on("user:joined", (user: any) => {
+      setRemotePlayers(prev => ({ ...prev, [user.id]: user }));
+      if (localStreamRef.current) {
+        const peer = createPeer(user.id, user.id, localStreamRef.current!);
+        peersRef.current[user.id] = peer;
+      }
+    });
+
+    socket.on("user:moved", (data: any) => {
+      setRemotePlayers(prev => {
+        if (!prev[data.id]) return prev;
+        return { ...prev, [data.id]: { ...prev[data.id], ...data } };
+      });
+    });
+
+    socket.on("user:speaking", (data: any) => {
+      setRemotePlayers(prev => {
+        if (!prev[data.id]) return prev;
+        return { ...prev, [data.id]: { ...prev[data.id], isSpeaking: data.isSpeaking } };
+      });
+    });
+
+    socket.on("user:left", (id: string) => {
+      setRemotePlayers(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      if (peersRef.current[id]) {
+        peersRef.current[id].destroy();
+        delete peersRef.current[id];
+      }
+    });
+
+    socket.on("signal", (data: any) => {
+      if (peersRef.current[data.from]) {
+        peersRef.current[data.from].signal(data.signal);
+      } else if (localStreamRef.current) {
+        const peer = addPeer(data.signal, data.from, localStreamRef.current!);
+        peersRef.current[data.from] = peer;
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+      (Object.values(peersRef.current) as Peer.Instance[]).forEach(p => p.destroy());
+      localStreamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, [userName]);
 
   const updateZone = (x: number, y: number) => {
     const zone = ZONES.find(z => 
@@ -206,8 +765,9 @@ export default function App() {
     if (keys['a'] || keys['arrowleft']) dx -= SPEED;
     if (keys['d'] || keys['arrowright']) dx += SPEED;
 
-    if (dx !== 0 || dy !== 0) {
-      setIsWalking(true);
+    const currentlyWalking = dx !== 0 || dy !== 0;
+
+    if (currentlyWalking) {
       if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
 
       const nextX = posRef.current.x + dx;
@@ -224,21 +784,21 @@ export default function App() {
       updateZone(finalX, finalY);
 
       const moveAngle = Math.atan2(dy, dx) * 180 / Math.PI;
-      setAngle(moveAngle + 90);
-    } else {
-      setIsWalking(false);
+      const newAngle = moveAngle + 90;
+      setAngle(newAngle);
+
+      socketRef.current?.emit("move", { pos: posRef.current, angle: newAngle, isWalking: true });
     }
 
-    // Check for nearby interactions
-    const activeTask = tasks.find(t => !t.done && t.zone === currentZone);
-    if (activeTask) {
-      setInteraction(`Press E to ${activeTask.text.toLowerCase()}`);
-    } else {
-      setInteraction(null);
+    if (isWalking !== currentlyWalking) {
+      setIsWalking(currentlyWalking);
+      if (!currentlyWalking) {
+        socketRef.current?.emit("move", { pos: posRef.current, angle, isWalking: false });
+      }
     }
 
     requestRef.current = requestAnimationFrame(loop);
-  }, [keys, currentZone, tasks]);
+  }, [keys, currentZone, tasks, isWalking, angle, remotePlayers]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -251,8 +811,22 @@ export default function App() {
           return t;
         }));
       }
+
+      if (key === ' ' && localStreamRef.current) {
+        localStreamRef.current.getAudioTracks().forEach(t => t.enabled = true);
+        setIsSpeaking(true);
+        socketRef.current?.emit("speaking", true);
+      }
     };
-    const handleKeyUp = (e: KeyboardEvent) => setKeys(prev => ({ ...prev, [e.key.toLowerCase()]: false }));
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      setKeys(prev => ({ ...prev, [key]: false }));
+      if (key === ' ' && localStreamRef.current) {
+        localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+        setIsSpeaking(false);
+        socketRef.current?.emit("speaking", false);
+      }
+    };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -267,32 +841,36 @@ export default function App() {
 
   const completedCount = tasks.filter(t => t.done).length;
 
-  return (
-    <div className="min-h-screen bg-[#eceef2] flex items-center justify-center overflow-hidden font-sans selection:bg-rose-200">
-      <HUD zone={currentZone} tasks={tasks} completedCount={completedCount} pos={pos} />
-      <UserMenu />
-      
-      <AnimatePresence>
-        {interaction && <InteractionPrompt text={interaction} />}
-      </AnimatePresence>
+  if (!userName || !roomId) return <EntryModal onJoin={handleJoin} />;
+  if (!avatarConfig) return <CharacterCustomizationModal onComplete={setAvatarConfig} />;
 
+  return (
+    <div className="min-h-screen bg-[#000000] flex items-center justify-center overflow-hidden font-sans selection:bg-white/20">
+      <HUD zone={currentZone} tasks={tasks} completedCount={completedCount} pos={pos} roomId={roomId} />
+      <UserMenu name={userName} playersCount={Object.keys(remotePlayers).length + 1} />
+      
       <div 
         id="office"
-        className="relative bg-white border-[12px] border-slate-800 rounded-lg shadow-[0_60px_120px_rgba(0,0,0,0.15)] overflow-hidden"
-        style={{ width: OFFICE_WIDTH, height: OFFICE_HEIGHT, backgroundImage: 'radial-gradient(#e2e8f0 1.5px, transparent 1.5px)', backgroundSize: '40px 40px' }}
+        className="relative bg-white border-[12px] border-black rounded-lg shadow-[0_60px_120px_rgba(0,0,0,0.5)] overflow-hidden"
+        style={{ 
+          width: OFFICE_WIDTH, 
+          height: OFFICE_HEIGHT, 
+          backgroundImage: 'radial-gradient(rgba(0,0,0,0.05) 1.5px, transparent 1.5px)', 
+          backgroundSize: '40px 40px' 
+        }}
       >
         {/* Dynamic Lighting Overlay */}
         <div 
-          className="absolute inset-0 z-[1100] pointer-events-none mix-blend-multiply opacity-30"
+          className="absolute inset-0 z-[1100] pointer-events-none mix-blend-multiply opacity-20"
           style={{ 
-            background: `radial-gradient(circle at ${pos.x}px ${pos.y}px, transparent 100px, #0f172a 400px)` 
+            background: `radial-gradient(circle at ${pos.x}px ${pos.y}px, transparent 100px, #000 400px)` 
           }}
         />
         {/* Walls */}
         {WALLS.map((w, i) => (
           <div 
             key={i} 
-            className="absolute bg-slate-800 z-10 shadow-sm"
+            className="absolute bg-black z-10 shadow-sm"
             style={{ left: w.left, top: w.top, width: w.right - w.left, height: w.bottom - w.top }}
           />
         ))}
@@ -306,6 +884,11 @@ export default function App() {
         {/* Furniture Layer */}
         <FurnitureLayer currentZone={currentZone} />
 
+        {/* Other Players */}
+        {(Object.values(remotePlayers) as RemotePlayer[]).map(player => (
+          <RemotePlayerAvatar key={player.id} player={player} localPos={pos} />
+        ))}
+
         {/* Doors */}
         <Doors pos={pos} />
 
@@ -313,31 +896,46 @@ export default function App() {
         <motion.div
           animate={{ x: pos.x, y: pos.y, rotate: angle }}
           transition={{ type: 'spring', damping: 25, stiffness: 200, mass: 0.5 }}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
           className="absolute z-[1000] -ml-[30px] -mt-[30px] w-[60px] h-[60px]"
         >
-          <div className={`relative w-full h-full ${isWalking ? 'animate-bounce' : ''}`}>
-             <div className="w-full h-full rounded-full bg-gradient-to-tr from-rose-500 to-orange-400 border-4 border-white shadow-2xl flex items-center justify-center overflow-hidden">
-                <User className="w-8 h-8 text-white" />
-                {/* Overlaying a directional indicator */}
-                <div className="absolute top-1 w-2 h-2 bg-white rounded-full" />
-             </div>
-            {isWalking && (
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-2 bg-black/10 rounded-[100%] blur-[2px]" />
+          {/* Voice Radius Indicator */}
+          <AnimatePresence>
+            {isSpeaking && (
+              <motion.div 
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                className="absolute inset-0 -m-20 rounded-full bg-black/5 pointer-events-none"
+                style={{ width: VOICE_RADIUS * 2, height: VOICE_RADIUS * 2, left: -VOICE_RADIUS + 30, top: -VOICE_RADIUS + 30 }}
+              />
             )}
-          </div>
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {(isHovered || isSpeaking) && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black text-white px-3 py-1 rounded-full shadow-lg border border-white/10 flex items-center gap-2"
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider">{userName}</span>
+                {isSpeaking && <Mic className="w-3 h-3" />}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <Avatar config={avatarConfig} isWalking={isWalking} isSpeaking={isSpeaking} />
         </motion.div>
       </div>
 
-      {/* Background Decor */}
-      <div className="fixed bottom-8 right-8 flex items-center gap-4 text-slate-400">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4" />
-          <span className="text-xs font-bold tabular-nums">09:42 AM</span>
-        </div>
-        <div className="h-4 w-px bg-slate-200" />
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-orange-400" />
-          <span className="text-xs font-bold">84% Focus</span>
+      {/* Push to Talk Hint */}
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4">
+        <div className={`flex items-center gap-3 px-6 py-3 rounded-2xl backdrop-blur-md border transition-all ${isSpeaking ? 'bg-black text-white shadow-xl' : 'bg-white/90 border-slate-200 text-slate-500'}`}>
+          {isSpeaking ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+          <span className="text-sm font-black uppercase tracking-widest">Hold Space to Talk</span>
         </div>
       </div>
     </div>
@@ -361,7 +959,7 @@ function Doors({ pos }: { pos: Point }) {
           <motion.div
             key={i}
             animate={{ rotate: isOpen ? -90 : 0 }}
-            className="absolute bg-rose-600 z-20 origin-left"
+            className="absolute bg-black z-20 origin-left"
             style={{ left: d.x, top: d.y, width: d.w, height: d.h }}
           />
         );
@@ -380,14 +978,14 @@ function PantryDoor({ pos }: { pos: Point }) {
   const isOpen = dist < 120;
 
   return (
-    <div className="absolute z-20 flex flex-col overflow-hidden bg-rose-600/10" style={{ left: 848, top: 560, width: 14, height: 80 }}>
+    <div className="absolute z-20 flex flex-col overflow-hidden bg-black/10" style={{ left: 848, top: 560, width: 14, height: 80 }}>
       <motion.div 
         animate={{ y: isOpen ? '-100%' : '0%' }}
-        className="flex-1 bg-rose-600 border-b border-rose-700"
+        className="flex-1 bg-black border-b border-white/10"
       />
       <motion.div 
         animate={{ y: isOpen ? '100%' : '0%' }}
-        className="flex-1 bg-rose-600 border-t border-rose-700"
+        className="flex-1 bg-black border-t border-white/10"
       />
     </div>
   );
