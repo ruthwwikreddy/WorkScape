@@ -461,16 +461,6 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
               {/* Denim texture pattern */}
               <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-blue-800/10 to-transparent" />
               {/* Stitching details */}
-              <div className="absolute left-1/2 top-2 w-px h-full bg-blue-900/40" />
-              <div className="absolute right-1/2 top-2 w-px h-full bg-blue-900/40" />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
   const getShirtDetails = () => {
     switch(config.shirtStyle) {
@@ -500,31 +490,37 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
     <div className="relative">
       {/* Main Torso Body - Connected to Arms */}
       <div 
-        className="relative shadow-lg overflow-hidden"
+        className="relative shadow-xl overflow-hidden"
         style={{
           width: proportions.torsoWidth,
           height: proportions.torsoHeight,
           backgroundColor: config.shirtColor,
-          borderRadius: config.shirtStyle === 'dress' ? '12px 12px 0 0' : '8px 8px 4px 4px'
+          borderRadius: config.shirtStyle === 'dress' ? '12px 12px 0 0' : '8px 8px 4px 4px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)' // Enhanced shadow
         }}
       >
         {/* Shirt Details */}
         {details.hasCollar && (
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-6 bg-white border border-slate-800 rounded-t" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-6 bg-white border border-slate-800 rounded-t shadow-md" />
         )}
         {details.hasButtons && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col gap-1">
             {[0, 1, 2].map(i => (
-              <div key={i} className="w-1 h-1 bg-slate-800 rounded-full" />
+              <div key={i} className="w-1 h-1 bg-slate-800 rounded-full shadow-sm" />
             ))}
           </div>
         )}
         {details.hasHood && (
-          <div className="absolute top-0 w-full h-4 bg-black/10 rounded-t" />
+          <div className="absolute top-0 w-full h-4 bg-gradient-to-b from-black/20 to-transparent rounded-t" />
         )}
         {details.hasSkirt && (
-          <div className="absolute bottom-0 w-full h-4 bg-gradient-to-b from-transparent to-black/10 rounded-b" />
+          <div className="absolute bottom-0 w-full h-4 bg-gradient-to-b from-transparent to-black/10 rounded-b shadow-inner" />
         )}
+
+        {/* Premium fabric texture overlay */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="h-full w-full bg-gradient-to-br from-white/20 via-transparent to-transparent" />
+        </div>
 
         {/* Subtle gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
@@ -533,7 +529,7 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
       {/* Arms - Connected to Torso */}
       <div className="absolute -left-3 top-2 flex flex-col items-center">
         <div
-          className="rounded-full origin-top shadow-md"
+          className="rounded-full origin-top shadow-lg"
           style={{
             width: proportions.armWidth,
             height: proportions.armHeight,
@@ -544,7 +540,7 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
         >
           {/* Hand - Connected to Torso */}
           <div 
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full shadow-md"
             style={{ 
               backgroundColor: config.skinColor,
               width: proportions.armWidth * 1.2
@@ -556,7 +552,7 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
       {/* Right Arm - Connected to Torso */}
       <div className="absolute -right-3 top-2 flex flex-col items-center">
         <div
-          className="rounded-full origin-top shadow-md"
+          className="rounded-full origin-top shadow-lg"
           style={{
             width: proportions.armWidth,
             height: proportions.armHeight,
@@ -567,7 +563,7 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
         >
           {/* Hand - Connected to Torso */}
           <div 
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full shadow-md"
             style={{ 
               backgroundColor: config.skinColor,
               width: proportions.armWidth * 1.2
@@ -579,6 +575,7 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
   );
 };
 
+// Avatar Head - PERFECT CIRCULAR PROFILE
 const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: { 
   config: AvatarConfig; 
   proportions: any; 
@@ -587,13 +584,15 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
 }) => {
   return (
     <div className="relative">
+      {/* Head Base - Perfect Circle */}
       <div
-        className="relative overflow-hidden shadow-2xl border-2 border-white/30"
+        className="relative overflow-hidden shadow-2xl border-2 border-white/40"
         style={{
           width: proportions.headSize,
           height: proportions.headSize,
           borderRadius: '50%',
-          backgroundColor: useProfilePic ? 'transparent' : config.skinColor
+          backgroundColor: useProfilePic ? 'transparent' : config.skinColor,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)' // Enhanced shadow
         }}
       >
         {useProfilePic && profileImg ? (
@@ -603,22 +602,28 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
             className="w-full h-full object-cover"
             style={{
               objectPosition: 'center',
-              objectFit: 'cover'
+              objectFit: 'cover',
+              borderRadius: '50%' // Ensure perfect circle
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: config.skinColor }}>
             {/* Eyes */}
             <div className="flex gap-2">
               <div 
                 className="w-2 h-2 bg-black/80 rounded-full" 
-                style={{ animation: 'v-blink 4s infinite' }} 
+                style={{ animation: 'v-blink 4s infinite 0.1s' }} 
               />
               <div 
                 className="w-2 h-2 bg-black/80 rounded-full" 
-                style={{ animation: 'v-blink 4s infinite 0.1s' }} 
+                style={{ animation: 'v-blink 4s infinite 0.1s 0.1s' }} // Staggered blinking
               />
             </div>
+            {/* Nose */}
+            <div 
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 w-1 h-1 bg-black/60 rounded-full" 
+              style={{ top: '6px' }}
+            />
           </div>
         )}
       </div>
@@ -867,7 +872,7 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
       {/* Ground Shadow */}
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-2 bg-black/10 rounded-full blur-md" />
 
-      {/* Avatar Container - Single Unit */}
+      {/* Avatar Container - PERFECT POSITIONING */}
       <div 
         className="relative"
         style={{ 
@@ -883,7 +888,7 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
         </div>
 
         {/* Torso Layer - Middle */}
-        <div className="absolute bottom-[32px] left-1/2 -translate-x-1/2 z-20">
+        <div className="absolute bottom-[35px] left-1/2 -translate-x-1/2 z-20">
           <AvatarTorso config={config} proportions={proportions} />
         </div>
 
@@ -894,7 +899,11 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
 
         {/* Hair Layer - Topmost */}
         {config.hairStyle !== 'none' && (
-          <div className="absolute z-40" style={{ top: -proportions.headSize + 2, left: '50%', transform: 'translateX(-50%)' }}>
+          <div className="absolute z-40" style={{ 
+            top: -4, // Closer to head
+            left: '50%', 
+            transform: 'translateX(-50%)' 
+          }}>
             <AvatarHair config={config} proportions={proportions} />
           </div>
         )}
