@@ -498,15 +498,14 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
 
   return (
     <div className="relative">
-      {/* Main Torso Body - Enhanced with better effects */}
+      {/* Main Torso Body - Fixed transparency issue */}
       <div 
         className="relative shadow-xl overflow-hidden"
         style={{
           width: proportions.torsoWidth,
           height: proportions.torsoHeight,
-          backgroundColor: config.shirtColor,
           borderRadius: config.shirtStyle === 'dress' ? '12px 12px 0 0' : '8px 8px 4px 4px',
-          background: config.shirtColor === 'suit' ? 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)' : 'none',
+          background: config.shirtStyle === 'suit' ? 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)' : 'none',
           boxShadow: '0 8px 16px rgba(0,0,0,0.1), inset 0 -2px 4px rgba(0,0,0,0.05)'
         }}
       >
@@ -534,17 +533,16 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
         <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-transparent pointer-events-none" />
       </div>
 
-      {/* Arms - Enhanced with better connection */}
+      {/* Arms - Fixed transparency issue */}
       <div className="absolute -left-3 top-2 flex flex-col items-center">
         <div
           className="rounded-full origin-top shadow-lg"
           style={{
             width: proportions.armWidth,
             height: proportions.armHeight,
-            backgroundColor: config.shirtColor,
+            backgroundColor: config.shirtColor, // Remove background override
             animation: 'v-swing-l 0.5s infinite',
-            transformOrigin: 'top center',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)'
+            transformOrigin: 'top center'
           }}
         >
           {/* Enhanced Hand - Better connection */}
@@ -559,17 +557,16 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
         </div>
       </div>
 
-      {/* Right Arm - Enhanced with better connection */}
+      {/* Right Arm - Fixed transparency issue */}
       <div className="absolute -right-3 top-2 flex flex-col items-center">
         <div
           className="rounded-full origin-top shadow-lg"
           style={{
             width: proportions.armWidth,
             height: proportions.armHeight,
-            backgroundColor: config.shirtColor,
+            backgroundColor: config.shirtColor, // Remove background override
             animation: 'v-swing-r 0.5s infinite',
-            transformOrigin: 'top center',
-            background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)'
+            transformOrigin: 'top center'
           }}
         >
           {/* Enhanced Hand - Better connection */}
