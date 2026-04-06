@@ -1011,7 +1011,10 @@ const UserMenu = React.memo(({ name, playersCount, user, onOpenSettings }: { nam
 ));
 
 const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, avatar?: AvatarConfig, status?: string, password?: string) => void; user: any }) => {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => {
+    // Auto-populate with Google display name for logged-in users
+    return user?.displayName || "";
+  });
   const [room, setRoom] = useState("");
   const [password, setPassword] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -1020,6 +1023,13 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
   const [selectedStatus, setSelectedStatus] = useState("available");
   const [showAvatarCustomizer, setShowAvatarCustomizer] = useState(false);
   const [tempAvatar, setTempAvatar] = useState<AvatarConfig | null>(null);
+
+  // Update name when user logs in
+  useEffect(() => {
+    if (user?.displayName && !name) {
+      setName(user.displayName);
+    }
+  }, [user, name]);
 
   useEffect(() => {
     const q = query(collection(db, 'rooms'), where('isPublic', '==', true));
@@ -1131,7 +1141,7 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
               <div className="flex gap-3">
                 <input 
                   type="text" 
-                  placeholder="Display Name"
+                  placeholder={user?.displayName ? "Custom name (optional)" : "Display Name"}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
@@ -1654,17 +1664,21 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setUser(u);
-        setUserName(u.displayName || "Anonymous");
         
         // Load Profile
         const profileDoc = await getDoc(doc(db, 'users', u.uid));
         if (profileDoc.exists()) {
           const data = profileDoc.data();
+          // Use custom display name if set, otherwise use Google display name
+          setUserName(data.displayName || u.displayName || "Anonymous");
           setAvatarConfig(data.avatarConfig);
           if (data.lastPos) {
             posRef.current = data.lastPos;
             setPos(data.lastPos);
           }
+        } else {
+          // No custom profile, use Google display name as default
+          setUserName(u.displayName || "Anonymous");
         }
 
         // Load Tasks
@@ -1725,7 +1739,18 @@ export default function App() {
         const result = await signInWithPopup(auth, googleProvider);
         currentUser = result.user;
         setUser(result.user);
-        setUserName(result.user.displayName || name);
+        // Use Google name as default, but allow custom changes
+        const displayName = name || result.user.displayName || "Anonymous";
+        setUserName(displayName);
+        
+        // Store custom name in Firebase if different from Google display name
+        if (name && name !== result.user.displayName) {
+          await setDoc(doc(db, 'users', result.user.uid), {
+            displayName: name,
+            customName: true,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
       } catch (err) {
         console.error("Auth failed", err);
         setUserName(name);
@@ -1733,7 +1758,18 @@ export default function App() {
         // But rules require isAuthenticated() for private rooms.
       }
     } else {
-      setUserName(name);
+      // User is already logged in
+      const displayName = name || currentUser.displayName || "Anonymous";
+      setUserName(displayName);
+      
+      // Store custom name in Firebase if different from Google display name
+      if (name && name !== currentUser.displayName) {
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          displayName: name,
+          customName: true,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
     }
 
     if (password) {
