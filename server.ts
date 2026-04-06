@@ -60,12 +60,18 @@ async function startServer() {
         user.pos = moveData.pos;
         user.angle = moveData.angle;
         user.isWalking = moveData.isWalking;
+        
         socket.to(roomId).emit("user:moved", {
           id: socket.id,
           pos: moveData.pos,
           angle: moveData.angle,
-          isWalking: moveData.isWalking
+          isWalking: moveData.isWalking,
+          timestamp: Date.now()
         });
+
+        if (moveData.seq !== undefined) {
+          socket.emit("move:ack", { seq: moveData.seq, pos: moveData.pos });
+        }
       }
     });
 
@@ -91,6 +97,26 @@ async function startServer() {
         socket.to(roomId).emit("user:speaking", {
           id: socket.id,
           isSpeaking
+        });
+      }
+    });
+
+    socket.on("chat:message", (message) => {
+      const roomId = (socket as any).roomId;
+      if (roomId) {
+        socket.to(roomId).emit("chat:message", {
+          id: socket.id,
+          message
+        });
+      }
+    });
+
+    socket.on("chat:emote", (emote) => {
+      const roomId = (socket as any).roomId;
+      if (roomId) {
+        socket.to(roomId).emit("chat:emote", {
+          id: socket.id,
+          emote
         });
       }
     });

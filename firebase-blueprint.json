@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user avatar configuration and last position",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User's unique ID" },
+        "name": { "type": "string", "description": "User's display name" },
+        "status": { "type": "string", "enum": ["available", "busy", "focus"], "description": "User's current status" },
+        "avatarConfig": { "type": "object", "description": "Avatar configuration" },
+        "lastPos": { "type": "object", "description": "Last known position" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "avatarConfig"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "A virtual office room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "password": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "isPublic"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A daily task for a user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Owner's UID" },
+        "text": { "type": "string", "description": "Task description" },
+        "done": { "type": "boolean", "description": "Completion status" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "text", "done"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "UserProfile",
+      "description": "Collection of user profiles"
+    },
+    "rooms": {
+      "schema": "Room",
+      "description": "Collection of virtual rooms"
+    },
+    "tasks": {
+      "schema": "Task",
+      "description": "Collection of user tasks"
+    }
+  }
+}

@@ -29,8 +29,23 @@ import {
   Plus,
   Check,
   X,
-  ShieldCheck
+  ShieldCheck,
+  Smile,
+  Send,
+  ArrowRight,
+  Globe,
+  Layout,
+  Video,
+  Shield,
+  Lock,
+  Search,
+  Settings as SettingsIcon,
+  Smile as SmileIcon
 } from 'lucide-react';
+import { 
+  auth, db, googleProvider, signInWithPopup, onAuthStateChanged, signOut,
+  doc, setDoc, getDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc
+} from './firebase';
 
 // --- Constants ---
 const OFFICE_WIDTH = 1200;
@@ -65,6 +80,10 @@ interface RemotePlayer {
   zone: string;
   avatarConfig: AvatarConfig;
   stream?: MediaStream;
+  message?: string;
+  emote?: string;
+  lastUpdate?: number;
+  prevPos?: Point;
 }
 
 const ZONES: Zone[] = [
@@ -93,17 +112,240 @@ const WALLS: Rect[] = [
 
 // --- Components ---
 
-const Avatar = ({ config, isWalking, isSpeaking }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean }) => {
+const LandingPage = ({ onStart }: { onStart: () => void }) => {
+  return (
+    <div className="min-h-screen bg-black text-white overflow-hidden font-sans">
+      {/* Background Grid */}
+      <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:40px_40px]" />
+      
+      {/* Hero Section */}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 pt-24 pb-32 flex flex-col items-center text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="inline-flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full border border-white/10 mb-8"
+        >
+          <Zap className="w-4 h-4 text-yellow-400" />
+          <span className="text-xs font-black uppercase tracking-widest">Next-Gen Virtual Office</span>
+        </motion.div>
+
+        <motion.h1
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="text-6xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.9]"
+        >
+          WORK TOGETHER,<br />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-white">ANYWHERE.</span>
+        </motion.h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="text-xl text-slate-400 max-w-2xl mb-12 font-medium"
+        >
+          A spatial virtual office with proximity voice, meeting rooms, and real-time collaboration. 
+          Feel the presence of your team without the zoom fatigue.
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="flex flex-col sm:flex-row gap-4"
+        >
+          <button
+            onClick={onStart}
+            className="px-10 py-5 bg-white text-black rounded-2xl font-black text-xl shadow-[0_20px_50px_rgba(255,255,255,0.2)] hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
+          >
+            Get Started
+            <ArrowRight className="w-6 h-6" />
+          </button>
+          <button className="px-10 py-5 bg-white/5 border border-white/10 rounded-2xl font-black text-xl hover:bg-white/10 transition-all">
+            View Demo
+          </button>
+        </motion.div>
+      </div>
+
+      {/* Features Grid */}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 pb-32">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {[
+            { icon: <Mic className="w-8 h-8" />, title: "Proximity Voice", desc: "Hear people louder as you walk closer to them. Natural conversations." },
+            { icon: <Layout className="w-8 h-8" />, title: "Spatial Office", desc: "A beautiful 2D office layout with meeting rooms and focus zones." },
+            { icon: <Shield className="w-8 h-8" />, title: "Private Bubbles", desc: "Need a quick 1-on-1? Step into a private bubble for isolated audio." }
+          ].map((f, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 + (i * 0.1) }}
+              className="bg-white/5 p-8 rounded-[32px] border border-white/10 hover:bg-white/10 transition-all group"
+            >
+              <div className="mb-6 text-slate-400 group-hover:text-white transition-colors">{f.icon}</div>
+              <h3 className="text-2xl font-black mb-4">{f.title}</h3>
+              <p className="text-slate-400 font-medium leading-relaxed">{f.desc}</p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="relative z-10 border-t border-white/10 py-12 text-center">
+        <p className="text-slate-500 font-bold text-sm uppercase tracking-widest">Built for the future of work</p>
+      </div>
+    </div>
+  );
+};
+
+const SettingsModal = ({ 
+  isOpen, 
+  onClose, 
+  userName, 
+  roomId, 
+  onLogout 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  userName: string; 
+  roomId: string;
+  onLogout: () => void;
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden"
+          >
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-2xl font-black text-black">Workspace Settings</h2>
+              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                <X className="w-6 h-6 text-slate-400" />
+              </button>
+            </div>
+            
+            <div className="p-8 space-y-8">
+              <section>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Current User</label>
+                <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white font-black">
+                    {userName.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-black text-black">{userName}</p>
+                    <p className="text-xs text-slate-500 font-bold">Authenticated Member</p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Current Room</label>
+                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <p className="font-black text-black">{roomId}</p>
+                  <button 
+                    onClick={() => {
+                      const newRoom = prompt("Enter Room ID to switch:", roomId);
+                      if (newRoom && newRoom !== roomId) {
+                        window.location.search = `?room=${newRoom}`;
+                      }
+                    }}
+                    className="text-xs font-black text-blue-600 uppercase tracking-widest hover:underline"
+                  >
+                    Switch
+                  </button>
+                </div>
+              </section>
+
+              <div className="pt-4 space-y-3">
+                <button 
+                  onClick={onLogout}
+                  className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-rose-100 transition-all"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout from Workspace
+                </button>
+                <button 
+                  onClick={onClose}
+                  className="w-full py-4 bg-black text-white rounded-2xl font-black text-sm hover:bg-slate-900 transition-all"
+                >
+                  Close Settings
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+const Avatar = ({ config, isWalking, isSpeaking, message, emote, status, isLocal }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean }) => {
   const bodyWidth = config.bodyType === 'slim' ? 32 : config.bodyType === 'wide' ? 48 : 40;
   
+  const statusColors: Record<string, string> = {
+    available: '#22c55e',
+    busy: '#ef4444',
+    focus: '#8b5cf6'
+  };
+
   return (
     <div className={`relative flex items-center justify-center transition-all duration-300 ${isWalking ? 'animate-bounce' : ''}`} style={{ width: 60, height: 60 }}>
+      {/* Status Indicator */}
+      {status && (
+        <motion.div 
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          className="absolute -top-12 flex flex-col items-center gap-1 z-50"
+        >
+          <div 
+            className="w-3 h-3 rounded-full border-2 border-white shadow-sm"
+            style={{ backgroundColor: statusColors[status] || '#ccc' }}
+          />
+          <span className="text-[8px] font-black uppercase tracking-tighter bg-white/80 backdrop-blur px-1 rounded border border-slate-100">
+            {status}
+          </span>
+        </motion.div>
+      )}
+
+      {/* Emote Bubble */}
+      <AnimatePresence>
+        {emote && (
+          <motion.div
+            initial={{ scale: 0, y: 0 }}
+            animate={{ scale: 1.2, y: -50 }}
+            exit={{ scale: 0, opacity: 0 }}
+            className="absolute z-[1200] text-3xl pointer-events-none"
+          >
+            {emote}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Message Bubble */}
+      <AnimatePresence>
+        {message && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: -60 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="absolute z-[1150] bg-white text-black px-4 py-2 rounded-2xl shadow-xl border-2 border-black font-bold text-sm whitespace-nowrap max-w-[200px] truncate"
+          >
+            {message}
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-r-2 border-b-2 border-black rotate-45" />
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Speaking Indicator Ring */}
       {isSpeaking && (
         <motion.div 
-          animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }}
+          animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.6, 0.3] }}
           transition={{ repeat: Infinity, duration: 1 }}
-          className="absolute inset-0 rounded-full ring-4 ring-black ring-offset-2"
+          className="absolute inset-0 rounded-full ring-4 ring-black/20 ring-offset-2"
         />
       )}
       
@@ -165,9 +407,10 @@ interface Task {
   id: string;
   text: string;
   done: boolean;
+  uid?: string;
 }
 
-const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask, onDeleteTask, onEditTask }: { 
+const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask, onDeleteTask, onEditTask, onOpenSettings }: { 
   zone: string; 
   tasks: Task[]; 
   completedCount: number; 
@@ -177,6 +420,7 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask
   onToggleTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
   onEditTask: (id: string, text: string) => void;
+  onOpenSettings: () => void;
 }) => {
   const [time, setTime] = useState(new Date());
   const [showShareTooltip, setShowShareTooltip] = useState(false);
@@ -233,23 +477,11 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask
             </div>
             <div className="flex items-center gap-1">
               <button 
-                onClick={() => {
-                  const newRoom = prompt("Enter Room ID to switch:", roomId || "");
-                  if (newRoom && newRoom !== roomId) {
-                    window.location.search = `?room=${newRoom}`;
-                  }
-                }}
+                onClick={onOpenSettings}
                 className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
-                title="Switch Room"
+                title="Settings"
               >
                 <Settings className="w-3 h-3" />
-              </button>
-              <button 
-                onClick={() => window.location.reload()}
-                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
-                title="Logout"
-              >
-                <LogOut className="w-3 h-3" />
               </button>
             </div>
           </div>
@@ -448,65 +680,224 @@ const UserMenu = ({ name, playersCount }: { name: string; playersCount: number }
   </div>
 );
 
-const EntryModal = ({ onJoin }: { onJoin: (name: string, roomId: string) => void }) => {
-  const [name, setName] = useState('');
-  const [roomId, setRoomId] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('room') || '';
-  });
+const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, avatar?: AvatarConfig, status?: string, password?: string) => void; user: any }) => {
+  const [name, setName] = useState("");
+  const [room, setRoom] = useState("");
+  const [password, setPassword] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
+  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState("available");
+  const [showAvatarCustomizer, setShowAvatarCustomizer] = useState(false);
+  const [tempAvatar, setTempAvatar] = useState<AvatarConfig | null>(null);
+
+  useEffect(() => {
+    const q = query(collection(db, 'rooms'), where('isPublic', '==', true));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setAvailableRooms(snapshot.docs.map(d => d.data()));
+    });
+    return () => unsub();
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (name && room) {
+      onJoin(name, room, tempAvatar || undefined, selectedStatus, password);
+    }
+  };
+
+  const handleCreateRoom = async () => {
+    if (!name || !room) return;
+    const roomData = {
+      id: room,
+      name: room,
+      password: password || "",
+      isPublic,
+      createdBy: user?.uid || "anonymous",
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, 'rooms', room), roomData);
+    onJoin(name, room, tempAvatar || undefined, selectedStatus, password);
+  };
+
+  if (showAvatarCustomizer) {
+    return (
+      <CharacterCustomizationModal 
+        onComplete={(config) => {
+          setTempAvatar(config);
+          setShowAvatarCustomizer(false);
+        }} 
+        user={user} 
+        userName={name || user?.displayName || "Guest"} 
+      />
+    );
+  }
 
   return (
-    <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/80 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/90 backdrop-blur-2xl p-4 font-sans">
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white p-10 rounded-[32px] shadow-2xl w-full max-w-md"
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col md:flex-row h-[600px]"
       >
-        <div className="flex justify-center mb-8">
-          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center shadow-xl">
-            <Briefcase className="w-10 h-10 text-white" />
+        {/* Left Side: Branding & Info */}
+        <div className="w-full md:w-1/2 bg-slate-900 p-12 text-white flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:20px_20px]" />
+          <div className="relative z-10">
+            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center mb-8">
+              <Zap className="w-6 h-6 text-black" />
+            </div>
+            <h1 className="text-4xl font-black tracking-tighter leading-none mb-4">JOIN THE<br />WORKSPACE.</h1>
+            <p className="text-slate-400 font-medium max-w-xs">Enter your details and choose a room to start collaborating with your team in real-time.</p>
           </div>
-        </div>
-        <h2 className="text-3xl font-black text-black text-center mb-2 tracking-tight">WorkSpace</h2>
-        <p className="text-slate-500 text-center mb-8 font-medium">Join a room to start collaborating</p>
-        
-        <div className="space-y-4 mb-6">
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Your Name</label>
-            <input 
-              autoFocus
-              type="text" 
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Alex Rivera"
-              className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-black focus:outline-none text-lg font-bold text-black transition-all"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Room ID</label>
-            <input 
-              type="text" 
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-              placeholder="e.g. design-team"
-              className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-black focus:outline-none text-lg font-bold text-black transition-all"
-            />
+          
+          <div className="relative z-10">
+            <div className="flex -space-x-3 mb-4">
+              {[1,2,3,4].map(i => (
+                <div key={i} className="w-10 h-10 rounded-full border-2 border-slate-900 bg-slate-700 flex items-center justify-center text-[10px] font-black">
+                  {String.fromCharCode(64 + i)}
+                </div>
+              ))}
+              <div className="w-10 h-10 rounded-full border-2 border-slate-900 bg-white text-black flex items-center justify-center text-[10px] font-black">
+                +12
+              </div>
+            </div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active members online now</p>
           </div>
         </div>
 
-        <button 
-          disabled={!name.trim() || !roomId.trim()}
-          onClick={() => onJoin(name.trim(), roomId.trim())}
-          className="w-full py-4 bg-black hover:bg-slate-900 disabled:bg-slate-200 disabled:cursor-not-allowed text-white rounded-2xl font-black text-lg shadow-xl transition-all active:scale-[0.98]"
-        >
-          Join Workspace
-        </button>
+        {/* Right Side: Form */}
+        <div className="w-full md:w-1/2 p-12 flex flex-col overflow-y-auto">
+          <div className="flex gap-4 mb-8">
+            <button 
+              onClick={() => setIsCreating(false)}
+              className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${!isCreating ? 'bg-black text-white shadow-xl' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+            >
+              Join Room
+            </button>
+            <button 
+              onClick={() => setIsCreating(true)}
+              className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isCreating ? 'bg-black text-white shadow-xl' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+            >
+              Create Room
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <section>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Your Identity</label>
+              <div className="flex gap-3">
+                <input 
+                  type="text" 
+                  placeholder="Display Name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
+                  required
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowAvatarCustomizer(true)}
+                  className="p-4 bg-slate-100 rounded-2xl hover:bg-slate-200 transition-colors"
+                  title="Customize Avatar"
+                >
+                  <SmileIcon className="w-6 h-6 text-slate-600" />
+                </button>
+              </div>
+            </section>
+
+            <section>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Initial Status</label>
+              <div className="flex gap-2">
+                {['available', 'busy', 'focus'].map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSelectedStatus(s)}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${selectedStatus === s ? 'bg-black text-white border-black' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300'}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">
+                {isCreating ? 'New Room Details' : 'Room ID'}
+              </label>
+              <div className="space-y-3">
+                <input 
+                  type="text" 
+                  placeholder="Room Name / ID"
+                  value={room}
+                  onChange={(e) => setRoom(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
+                  required
+                />
+                <div className="relative">
+                  <Lock className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                  <input 
+                    type="password" 
+                    placeholder="Password (Optional)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-14 pr-6 py-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
+                  />
+                </div>
+                {isCreating && (
+                  <div className="flex items-center gap-2 px-2">
+                    <input 
+                      type="checkbox" 
+                      checked={isPublic} 
+                      onChange={(e) => setIsPublic(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className="text-xs font-bold text-slate-500">List this room publicly</span>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {!isCreating && availableRooms.length > 0 && (
+              <section>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Public Rooms</label>
+                <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
+                  {availableRooms.map(r => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setRoom(r.id)}
+                      className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-left hover:bg-slate-100 transition-all group"
+                    >
+                      <p className="text-xs font-black text-slate-700 truncate">{r.name}</p>
+                      <div className="flex items-center gap-1">
+                        <Users className="w-2 h-2 text-slate-400" />
+                        <span className="text-[8px] font-bold text-slate-400 uppercase">Active</span>
+                        {r.password && <Lock className="w-2 h-2 text-slate-400 ml-auto" />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <button 
+              type="button"
+              onClick={isCreating ? handleCreateRoom : handleSubmit}
+              className="w-full py-5 bg-black text-white rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+            >
+              {isCreating ? 'Create & Join' : 'Enter Workspace'}
+              <ArrowRight className="w-5 h-5" />
+            </button>
+          </form>
+        </div>
       </motion.div>
     </div>
   );
 };
 
-const CharacterCustomizationModal = ({ onComplete }: { onComplete: (config: AvatarConfig) => void }) => {
+const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplete: (config: AvatarConfig) => void, user: any, userName: string | null }) => {
   const [config, setConfig] = useState<AvatarConfig>(() => {
     const saved = localStorage.getItem('avatarConfig');
     return saved ? JSON.parse(saved) : {
@@ -526,8 +917,16 @@ const CharacterCustomizationModal = ({ onComplete }: { onComplete: (config: Avat
   const hairStyles: AvatarConfig['hairStyle'][] = ['none', 'short', 'long', 'pompadour'];
   const bodyTypes: AvatarConfig['bodyType'][] = ['slim', 'normal', 'wide'];
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     localStorage.setItem('avatarConfig', JSON.stringify(config));
+    if (user) {
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        name: userName,
+        avatarConfig: config,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
     onComplete(config);
   };
 
@@ -664,8 +1063,14 @@ const RemotePlayerAvatar = ({ player, localPos, localIsPrivate, localZone }: { p
   const [isHovered, setIsHovered] = useState(false);
   const dist = Math.hypot(player.pos.x - localPos.x, player.pos.y - localPos.y);
   
+  // Proximity-based visibility for speaking cue
+  const canSeeSpeakingCue = dist < VOICE_RADIUS * 1.5;
+
+  // Interpolation logic: Use a more responsive spring for remote players
+  // to follow the server updates smoothly.
+  const springConfig = { type: 'spring', damping: 35, stiffness: 250, mass: 0.4 };
+
   // Meeting Room Isolation Logic:
-  // If either person is in a "Conference Room", they can only hear each other if they are in the SAME room.
   const isMeetingRoom = (z: string) => z && z.startsWith("Conference Room");
   const inSameMeetingRoom = isMeetingRoom(localZone) && localZone === player.zone;
   const oneInMeetingRoom = isMeetingRoom(localZone) || isMeetingRoom(player.zone);
@@ -674,34 +1079,31 @@ const RemotePlayerAvatar = ({ player, localPos, localIsPrivate, localZone }: { p
   const inSameBubble = dist < 100;
   const isMutedByPrivate = (player.isPrivate || localIsPrivate) && !inSameBubble;
   
-  // Final Isolation Logic:
-  // 1. If one is in a meeting room but not the same one, they are muted.
-  // 2. If both are in the same meeting room, proximity still applies but maybe with a boost? 
-  //    Actually, let's make meeting rooms "Full Volume" if you are inside together.
-  
   let volume = 0;
   if (oneInMeetingRoom) {
     if (inSameMeetingRoom) {
-      // Boosted volume for meeting rooms
-      volume = Math.max(0, Math.min(1, 1.2 - (dist / (VOICE_RADIUS * 1.5))));
+      // Nuanced falloff curve: Inverse square law
+      const normalizedDist = dist / (VOICE_RADIUS * 1.5);
+      volume = normalizedDist < 1 ? 1 / (1 + Math.pow(normalizedDist * 2, 2)) : 0;
     } else {
       volume = 0;
     }
   } else if (!isMutedByPrivate) {
-    volume = Math.max(0, Math.min(1, Math.pow(1 - (dist / VOICE_RADIUS), 2)));
+    const normalizedDist = dist / VOICE_RADIUS;
+    volume = normalizedDist < 1 ? 1 / (1 + Math.pow(normalizedDist * 2, 2)) : 0;
   }
 
   useEffect(() => {
     if (audioRef.current && player.stream) {
       audioRef.current.srcObject = player.stream;
-      audioRef.current.volume = volume;
+      audioRef.current.volume = Math.max(0, Math.min(1, volume));
     }
   }, [player.stream, volume]);
 
   return (
     <motion.div
       animate={{ x: player.pos.x, y: player.pos.y, rotate: player.angle }}
-      transition={{ type: 'spring', damping: 25, stiffness: 200, mass: 0.5 }}
+      transition={springConfig}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className="absolute z-[900] -ml-[30px] -mt-[30px] w-[60px] h-[60px]"
@@ -735,13 +1137,23 @@ const RemotePlayerAvatar = ({ player, localPos, localIsPrivate, localZone }: { p
         )}
       </AnimatePresence>
 
-      <Avatar config={player.avatarConfig} isWalking={player.isWalking} isSpeaking={player.isSpeaking} />
+      <Avatar 
+        config={player.avatarConfig} 
+        isWalking={player.isWalking} 
+        isSpeaking={player.isSpeaking && canSeeSpeakingCue} 
+        message={player.message}
+        emote={player.emote}
+        status={player.status}
+      />
       <audio ref={audioRef} autoPlay />
     </motion.div>
   );
 };
 
 export default function App() {
+  const [showLanding, setShowLanding] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
@@ -756,32 +1168,170 @@ export default function App() {
   const [keys, setKeys] = useState<Record<string, boolean>>({});
   const [remotePlayers, setRemotePlayers] = useState<Record<string, RemotePlayer>>({});
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [localMessage, setLocalMessage] = useState<string | null>(null);
+  const [localEmote, setLocalEmote] = useState<string | null>(null);
+  const [chatInput, setChatInput] = useState("");
+  const [showEmotePicker, setShowEmotePicker] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const peersRef = useRef<Record<string, Peer.Instance>>({});
   const localStreamRef = useRef<MediaStream | null>(null);
   const requestRef = useRef<number>(null);
   const posRef = useRef<Point>({ x: 100, y: 700 });
+  const lastEmitRef = useRef<number>(0);
+  const seqRef = useRef<number>(0);
+  const pendingInputs = useRef<{ seq: number; pos: Point }[]>([]);
 
-  const handleJoin = (name: string, room: string) => {
-    setUserName(name);
+  // Firebase Auth
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        setUser(u);
+        setUserName(u.displayName || "Anonymous");
+        
+        // Load Profile
+        const profileDoc = await getDoc(doc(db, 'users', u.uid));
+        if (profileDoc.exists()) {
+          const data = profileDoc.data();
+          setAvatarConfig(data.avatarConfig);
+          if (data.lastPos) {
+            posRef.current = data.lastPos;
+            setPos(data.lastPos);
+          }
+        }
+
+        // Load Tasks
+        const q = query(collection(db, 'tasks'), where('uid', '==', u.uid));
+        const unsubTasks = onSnapshot(q, (snapshot) => {
+          const tks = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Task));
+          setTasks(tks);
+        });
+        return () => unsubTasks();
+      } else {
+        setUser(null);
+        setUserName(null);
+        setAvatarConfig(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Save position periodically
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(async () => {
+      await setDoc(doc(db, 'users', user.uid), {
+        lastPos: posRef.current,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }, 10000); // Every 10 seconds
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT') return;
+
+      if (e.key.toLowerCase() === 's') {
+        setShowSettings(prev => !prev);
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const chatInputEl = document.querySelector('input[placeholder="Type a message..."]') as HTMLInputElement;
+        chatInputEl?.focus();
+      }
+      if (e.key >= '1' && e.key <= '8') {
+        const emotes = ["👋", "👍", "😂", "🚀", "🔥", "❤️", "😮", "🎉"];
+        handleSendEmote(emotes[parseInt(e.key) - 1]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleJoin = async (name: string, room: string, avatar?: AvatarConfig, initialStatus?: string, password?: string) => {
+    if (password) {
+      const roomDoc = await getDoc(doc(db, 'rooms', room));
+      if (roomDoc.exists() && roomDoc.data().password && roomDoc.data().password !== password) {
+        // Use a more subtle error indication if possible, but alert is okay for now
+        alert("Incorrect room password!");
+        return;
+      }
+    }
+
+    if (!user) {
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        setUser(result.user);
+        setUserName(result.user.displayName || name);
+      } catch (err) {
+        console.error("Auth failed", err);
+        setUserName(name);
+      }
+    } else {
+      setUserName(name);
+    }
+
+    if (avatar) setAvatarConfig(avatar);
+    if (initialStatus) setStatus(initialStatus as any);
     setRoomId(room);
   };
 
-  const handleAddTask = (text: string) => {
-    setTasks(prev => [...prev, { id: Date.now().toString(), text, done: false }]);
+  const handleAddTask = async (text: string) => {
+    if (user) {
+      await addDoc(collection(db, 'tasks'), {
+        uid: user.uid,
+        text,
+        done: false,
+        createdAt: new Date().toISOString()
+      });
+    } else {
+      setTasks(prev => [...prev, { id: Date.now().toString(), text, done: false }]);
+    }
   };
 
-  const handleToggleTask = (id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  const handleToggleTask = async (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (user && task) {
+      await updateDoc(doc(db, 'tasks', id), { done: !task.done });
+    } else {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+    }
   };
 
-  const handleDeleteTask = (id: string) => {
-    setTasks(prev => prev.filter(t => t.id !== id));
+  const handleDeleteTask = async (id: string) => {
+    if (user) {
+      await deleteDoc(doc(db, 'tasks', id));
+    } else {
+      setTasks(prev => prev.filter(t => t.id !== id));
+    }
   };
 
-  const handleEditTask = (id: string, text: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, text } : t));
+  const handleEditTask = async (id: string, text: string) => {
+    if (user) {
+      await updateDoc(doc(db, 'tasks', id), { text });
+    } else {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, text } : t));
+    }
+  };
+
+  const handleSendChat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (chatInput.trim()) {
+      setLocalMessage(chatInput.trim());
+      socketRef.current?.emit("chat:message", chatInput.trim());
+      setChatInput("");
+      setTimeout(() => setLocalMessage(null), 5000);
+    }
+  };
+
+  const handleSendEmote = (emote: string) => {
+    setLocalEmote(emote);
+    socketRef.current?.emit("chat:emote", emote);
+    setShowEmotePicker(false);
+    setTimeout(() => setLocalEmote(null), 3000);
   };
 
   const handleTogglePrivate = () => {
@@ -904,8 +1454,32 @@ export default function App() {
           data.pos.x >= z.bounds.left && data.pos.x <= z.bounds.right && 
           data.pos.y >= z.bounds.top && data.pos.y <= z.bounds.bottom
         );
-        return { ...prev, [data.id]: { ...prev[data.id], ...data, zone: zone?.name || "Lobby" } };
+        return { 
+          ...prev, 
+          [data.id]: { 
+            ...prev[data.id], 
+            ...data, 
+            zone: zone?.name || "Lobby",
+            prevPos: prev[data.id].pos,
+            lastUpdate: Date.now()
+          } 
+        };
       });
+    });
+
+    socket.on("move:ack", (data: { seq: number, pos: Point }) => {
+      // Server-side reconciliation:
+      // Remove acknowledged inputs
+      pendingInputs.current = pendingInputs.current.filter(input => input.seq > data.seq);
+      
+      // If the server position differs significantly from our predicted position at that time,
+      // we could snap or lerp back. For now, we trust our local prediction but keep this for future physics.
+      const dist = Math.hypot(posRef.current.x - data.pos.x, posRef.current.y - data.pos.y);
+      if (dist > 50) {
+        // Correct position if desync is too large
+        posRef.current = data.pos;
+        setPos(data.pos);
+      }
     });
 
     socket.on("user:speaking", (data: any) => {
@@ -920,6 +1494,32 @@ export default function App() {
         if (!prev[data.id]) return prev;
         return { ...prev, [data.id]: { ...prev[data.id], status: data.status, isPrivate: data.isPrivate } };
       });
+    });
+
+    socket.on("chat:message", (data: any) => {
+      setRemotePlayers(prev => {
+        if (!prev[data.id]) return prev;
+        return { ...prev, [data.id]: { ...prev[data.id], message: data.message } };
+      });
+      setTimeout(() => {
+        setRemotePlayers(prev => {
+          if (!prev[data.id]) return prev;
+          return { ...prev, [data.id]: { ...prev[data.id], message: undefined } };
+        });
+      }, 5000);
+    });
+
+    socket.on("chat:emote", (data: any) => {
+      setRemotePlayers(prev => {
+        if (!prev[data.id]) return prev;
+        return { ...prev, [data.id]: { ...prev[data.id], emote: data.emote } };
+      });
+      setTimeout(() => {
+        setRemotePlayers(prev => {
+          if (!prev[data.id]) return prev;
+          return { ...prev, [data.id]: { ...prev[data.id], emote: undefined } };
+        });
+      }, 3000);
     });
 
     socket.on("user:left", (id: string) => {
@@ -1000,13 +1600,32 @@ export default function App() {
       const newAngle = moveAngle + 90;
       setAngle(newAngle);
 
-      socketRef.current?.emit("move", { pos: posRef.current, angle: newAngle, isWalking: true });
+      // Client-side prediction: Update local state immediately
+      // and queue for server reconciliation
+      const currentSeq = seqRef.current++;
+      pendingInputs.current.push({ seq: currentSeq, pos: posRef.current });
+
+      // Throttle emits to 20Hz to reduce network jitter and traffic
+      if (Date.now() - lastEmitRef.current > 50) {
+        socketRef.current?.emit("move", { 
+          pos: posRef.current, 
+          angle: newAngle, 
+          isWalking: true,
+          seq: currentSeq
+        });
+        lastEmitRef.current = Date.now();
+      }
     }
 
     if (isWalking !== currentlyWalking) {
       setIsWalking(currentlyWalking);
       if (!currentlyWalking) {
-        socketRef.current?.emit("move", { pos: posRef.current, angle, isWalking: false });
+        socketRef.current?.emit("move", { 
+          pos: posRef.current, 
+          angle, 
+          isWalking: false,
+          seq: seqRef.current++
+        });
       }
     }
 
@@ -1015,9 +1634,25 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+      
       const key = e.key.toLowerCase();
       setKeys(prev => ({ ...prev, [key]: true }));
-      
+
+      // Keyboard Shortcuts
+      if (key === 's') {
+        e.preventDefault();
+        setShowSettings(true);
+      }
+      if (key === 'c') {
+        e.preventDefault();
+        document.getElementById('chat-input')?.focus();
+      }
+      if (key === '1') setLocalEmote("👋");
+      if (key === '2') setLocalEmote("🔥");
+      if (key === '3') setLocalEmote("❤️");
+      if (key === '4') setLocalEmote("😂");
+
       if (key === 'e') {
         setTasks(prev => prev.map(t => {
           if (!t.done && t.zone === currentZone) return { ...t, done: true };
@@ -1052,13 +1687,26 @@ export default function App() {
     };
   }, [loop, currentZone]);
 
+  const handleLogout = async () => {
+    await signOut(auth);
+    window.location.reload();
+  };
+
   const completedCount = tasks.filter(t => t.done).length;
 
-  if (!userName || !roomId) return <EntryModal onJoin={handleJoin} />;
-  if (!avatarConfig) return <CharacterCustomizationModal onComplete={setAvatarConfig} />;
+  if (showLanding && !userName) return <LandingPage onStart={() => setShowLanding(false)} />;
+  if (!userName || !roomId) return <EntryModal onJoin={handleJoin} user={user} />;
+  if (!avatarConfig) return <CharacterCustomizationModal onComplete={setAvatarConfig} user={user} userName={userName} />;
 
   return (
     <div className="min-h-screen bg-[#000000] flex items-center justify-center overflow-hidden font-sans selection:bg-white/20">
+      <SettingsModal 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)} 
+        userName={userName} 
+        roomId={roomId} 
+        onLogout={handleLogout}
+      />
       <HUD 
         zone={currentZone} 
         tasks={tasks} 
@@ -1069,6 +1717,7 @@ export default function App() {
         onToggleTask={handleToggleTask}
         onDeleteTask={handleDeleteTask}
         onEditTask={handleEditTask}
+        onOpenSettings={() => setShowSettings(true)}
       />
       <UserMenu name={userName} playersCount={Object.keys(remotePlayers).length + 1} />
       
@@ -1154,8 +1803,62 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          <Avatar config={avatarConfig} isWalking={isWalking} isSpeaking={isSpeaking} />
+          <Avatar 
+            config={avatarConfig} 
+            isWalking={isWalking} 
+            isSpeaking={isSpeaking} 
+            message={localMessage || undefined}
+            emote={localEmote || undefined}
+            status={status}
+            isLocal
+          />
         </motion.div>
+      </div>
+
+      {/* Chat & Emote Controls */}
+      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 flex items-center gap-4 pointer-events-auto">
+        <form onSubmit={handleSendChat} className="flex items-center gap-2 bg-black/90 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl">
+          <input 
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="Type a message..."
+            className="bg-transparent border-none text-white text-sm font-bold px-4 py-2 focus:outline-none w-48 md:w-64"
+          />
+          <button type="submit" className="p-2 bg-white text-black rounded-xl hover:bg-slate-200 transition-colors">
+            <Send className="w-4 h-4" />
+          </button>
+        </form>
+
+        <div className="relative">
+          <button 
+            onClick={() => setShowEmotePicker(!showEmotePicker)}
+            className="p-4 bg-black/90 backdrop-blur-md text-white rounded-2xl border border-white/10 shadow-2xl hover:bg-slate-900 transition-all"
+          >
+            <Smile className="w-5 h-5" />
+          </button>
+          
+          <AnimatePresence>
+            {showEmotePicker && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: -10 }}
+                exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-black/95 backdrop-blur-xl p-4 rounded-[32px] border border-white/10 shadow-2xl flex gap-3"
+              >
+                {['👋', '👍', '😂', '🚀', '🔥', '❤️', '💡', '🎉'].map(e => (
+                  <button
+                    key={e}
+                    onClick={() => handleSendEmote(e)}
+                    className="text-2xl hover:scale-125 transition-transform p-2"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Push to Talk Hint & Status Controls */}
@@ -1267,12 +1970,27 @@ function FurnitureLayer({ currentZone }: { currentZone: string }) {
 function Desk({ x, y, w, h, hasLaptop }: { x: number; y: number; w: number; h: number; hasLaptop?: boolean }) {
   return (
     <div 
-      className="absolute bg-white border border-slate-200 rounded shadow-sm z-10 flex items-center justify-center"
+      className="absolute z-10"
       style={{ left: x, top: y, width: w, height: h }}
     >
-      {hasLaptop && (
-        <div className="w-8 h-5 bg-slate-300 rounded-sm border-t-4 border-sky-400 shadow-inner" />
-      )}
+      {/* Table Legs (Top-down view, just small circles at corners) */}
+      <div className="absolute top-1 left-1 w-2 h-2 bg-slate-400 rounded-full shadow-sm" />
+      <div className="absolute top-1 right-1 w-2 h-2 bg-slate-400 rounded-full shadow-sm" />
+      <div className="absolute bottom-1 left-1 w-2 h-2 bg-slate-400 rounded-full shadow-sm" />
+      <div className="absolute bottom-1 right-1 w-2 h-2 bg-slate-400 rounded-full shadow-sm" />
+      
+      {/* Table Surface */}
+      <div className="absolute inset-0 bg-white border border-slate-200 rounded shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)] flex items-center justify-center overflow-hidden">
+        {/* Wood Grain Pattern (Subtle) */}
+        <div className="absolute inset-0 opacity-[0.03] bg-[repeating-linear-gradient(90deg,#000,#000_1px,transparent_1px,transparent_10px)]" />
+        
+        {hasLaptop && (
+          <div className="relative w-10 h-7 bg-slate-800 rounded-sm border-t-[3px] border-sky-400 shadow-lg flex items-center justify-center">
+            <div className="w-6 h-0.5 bg-slate-700 rounded-full mb-1" />
+            <div className="absolute bottom-1 w-4 h-1 bg-slate-600 rounded-full opacity-50" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
