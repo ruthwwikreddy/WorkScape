@@ -461,25 +461,35 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
               {/* Denim texture pattern */}
               <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-blue-800/10 to-transparent" />
               {/* Stitching details */}
+              <div className="absolute left-1/2 top-2 w-px h-full bg-blue-900/40" />
+              <div className="absolute right-1/2 top-2 w-px h-full bg-blue-900/40" />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
   const getShirtDetails = () => {
     switch(config.shirtStyle) {
       case 'suit': return {
         hasCollar: true,
         hasButtons: true,
-        extraClass: 'border-2 border-slate-800'
+        extraClass: 'border-2 border-slate-800 shadow-lg'
       };
       case 'hoodie': return {
         hasHood: true,
-        extraClass: 'border-b-2 border-slate-700'
+        extraClass: 'border-b-2 border-slate-700 shadow-lg'
       };
       case 'dress': return {
         hasSkirt: true,
-        extraClass: 'rounded-b-lg'
+        extraClass: 'rounded-b-lg shadow-lg'
       };
       default: return {
         hasSleeves: true,
-        extraClass: ''
+        extraClass: 'shadow-lg'
       };
     }
   };
@@ -488,7 +498,7 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
 
   return (
     <div className="relative">
-      {/* Main Torso Body - Connected to Arms */}
+      {/* Main Torso Body - Enhanced with better effects */}
       <div 
         className="relative shadow-xl overflow-hidden"
         style={{
@@ -496,15 +506,18 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
           height: proportions.torsoHeight,
           backgroundColor: config.shirtColor,
           borderRadius: config.shirtStyle === 'dress' ? '12px 12px 0 0' : '8px 8px 4px 4px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)' // Enhanced shadow
+          background: config.shirtColor === 'suit' ? 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)' : 'none',
+          boxShadow: '0 8px 16px rgba(0,0,0,0.1), inset 0 -2px 4px rgba(0,0,0,0.05)'
         }}
       >
-        {/* Shirt Details */}
+        {/* Enhanced Shirt Details */}
         {details.hasCollar && (
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-6 bg-white border border-slate-800 rounded-t shadow-md" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-5 h-7 bg-white border-2 border-slate-800 rounded-t shadow-md">
+            <div className="absolute top-1 left-1/2 w-3 h-1 bg-slate-900 rounded-full" />
+          </div>
         )}
         {details.hasButtons && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col gap-1">
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col gap-1">
             {[0, 1, 2].map(i => (
               <div key={i} className="w-1 h-1 bg-slate-800 rounded-full shadow-sm" />
             ))}
@@ -514,19 +527,14 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
           <div className="absolute top-0 w-full h-4 bg-gradient-to-b from-black/20 to-transparent rounded-t" />
         )}
         {details.hasSkirt && (
-          <div className="absolute bottom-0 w-full h-4 bg-gradient-to-b from-transparent to-black/10 rounded-b shadow-inner" />
+          <div className="absolute bottom-0 w-full h-6 bg-gradient-to-b from-transparent to-black/10 rounded-b" />
         )}
 
-        {/* Premium fabric texture overlay */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="h-full w-full bg-gradient-to-br from-white/20 via-transparent to-transparent" />
-        </div>
-
-        {/* Subtle gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+        {/* Premium gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-transparent pointer-events-none" />
       </div>
 
-      {/* Arms - Connected to Torso */}
+      {/* Arms - Enhanced with better connection */}
       <div className="absolute -left-3 top-2 flex flex-col items-center">
         <div
           className="rounded-full origin-top shadow-lg"
@@ -535,21 +543,23 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
             height: proportions.armHeight,
             backgroundColor: config.shirtColor,
             animation: 'v-swing-l 0.5s infinite',
-            transformOrigin: 'top center'
+            transformOrigin: 'top center',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)'
           }}
         >
-          {/* Hand - Connected to Torso */}
+          {/* Enhanced Hand - Better connection */}
           <div 
             className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full shadow-md"
             style={{ 
               backgroundColor: config.skinColor,
-              width: proportions.armWidth * 1.2
+              width: proportions.armWidth * 1.2,
+              boxShadow: 'inset 0 -1px 2px rgba(0,0,0,0.1)'
             }}
           />
         </div>
       </div>
 
-      {/* Right Arm - Connected to Torso */}
+      {/* Right Arm - Enhanced with better connection */}
       <div className="absolute -right-3 top-2 flex flex-col items-center">
         <div
           className="rounded-full origin-top shadow-lg"
@@ -558,15 +568,17 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
             height: proportions.armHeight,
             backgroundColor: config.shirtColor,
             animation: 'v-swing-r 0.5s infinite',
-            transformOrigin: 'top center'
+            transformOrigin: 'top center',
+            background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)'
           }}
         >
-          {/* Hand - Connected to Torso */}
+          {/* Enhanced Hand - Better connection */}
           <div 
             className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full shadow-md"
             style={{ 
               backgroundColor: config.skinColor,
-              width: proportions.armWidth * 1.2
+              width: proportions.armWidth * 1.2,
+              boxShadow: 'inset 0 -1px 2px rgba(0,0,0,0.1)'
             }}
           />
         </div>
@@ -575,7 +587,6 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
   );
 };
 
-// Avatar Head - PERFECT CIRCULAR PROFILE
 const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: { 
   config: AvatarConfig; 
   proportions: any; 
@@ -584,15 +595,16 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
 }) => {
   return (
     <div className="relative">
-      {/* Head Base - Perfect Circle */}
       <div
-        className="relative overflow-hidden shadow-2xl border-2 border-white/40"
+        className="relative overflow-hidden shadow-2xl border-2 border-white/40 rounded-full backdrop-blur-sm"
         style={{
           width: proportions.headSize,
           height: proportions.headSize,
           borderRadius: '50%',
           backgroundColor: useProfilePic ? 'transparent' : config.skinColor,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)' // Enhanced shadow
+          boxShadow: useProfilePic 
+            ? '0 4px 20px rgba(0,0,0,0.1)' 
+            : `0 4px 20px rgba(0,0,0,0.15), inset 0 2px 4px rgba(0,0,0,0.1)`
         }}
       >
         {useProfilePic && profileImg ? (
@@ -602,28 +614,32 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
             className="w-full h-full object-cover"
             style={{
               objectPosition: 'center',
-              objectFit: 'cover',
-              borderRadius: '50%' // Ensure perfect circle
+              objectFit: 'cover'
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: config.skinColor }}>
-            {/* Eyes */}
+          <div className="w-full h-full flex items-center justify-center">
+            {/* Eyes with better rendering */}
             <div className="flex gap-2">
               <div 
-                className="w-2 h-2 bg-black/80 rounded-full" 
-                style={{ animation: 'v-blink 4s infinite 0.1s' }} 
+                className="w-2 h-2 bg-black/90 rounded-full"
+                style={{ 
+                  animation: 'v-blink 4s infinite 0.1s',
+                  boxShadow: 'inset 0 0 2px 1px rgba(255,255,255,0.3)'
+                }} 
               />
               <div 
-                className="w-2 h-2 bg-black/80 rounded-full" 
-                style={{ animation: 'v-blink 4s infinite 0.1s 0.1s' }} // Staggered blinking
+                className="w-2 h-2 bg-black/90 rounded-full"
+                style={{ 
+                  animation: 'v-blink 4s infinite 0.1s 0.2s',
+                  boxShadow: 'inset 0 0 2px 1px rgba(255,255,255,0.3)'
+                }} 
               />
             </div>
-            {/* Nose */}
-            <div 
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 w-1 h-1 bg-black/60 rounded-full" 
-              style={{ top: '6px' }}
-            />
+            
+            {/* Face features for non-profile avatars */}
+            <div className="absolute top-1/2 left-1/2 w-4 h-1 bg-white/80 rounded-full" />
+            <div className="absolute top-1/3 left-1/2 w-6 h-0.5 bg-white/60 rounded-full" />
           </div>
         )}
       </div>
@@ -636,16 +652,24 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
     switch(config.hairStyle) {
       case 'short':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-xl" style={{ 
+            width: proportions.headSize * 1.4, 
+            height: proportions.headSize * 0.9,
+            marginTop: '-2px' // Slight overlap with head
+          }}>
             <path d="M20 40 Q20 20 50 20 Q80 20 80 40 L80 50 Q60 45 50 50 Q40 45 20 50 Z" fill={config.hairColor} />
-            <path d="M25 35 Q50 25 75 35" stroke="rgba(0,0,0,0.1)" strokeWidth="2" fill="none" />
+            <path d="M25 35 Q50 25 75 35" stroke="rgba(0,0,0,0.15)" strokeWidth="2" fill="none" />
             {/* Shadow for depth */}
-            <ellipse cx="50" cy="70" rx="25" ry="8" fill="rgba(0,0,0,0.1)" />
+            <ellipse cx="50" cy="70" rx="25" ry="8" fill="rgba(0,0,0,0.15)" />
           </svg>
         );
       case 'fade':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.6 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-xl" style={{ 
+            width: proportions.headSize * 1.4, 
+            height: proportions.headSize * 0.7,
+            marginTop: '-4px' // More overlap for fade style
+          }}>
             <path d="M15 35 Q15 15 50 15 Q85 15 90 35 L85 45 L15 45 Z" fill={config.hairColor} />
             <rect x="15" y="35" width="70" height="10" fill={config.hairColor} opacity="0.7" />
             {/* Soft gradient overlay */}
@@ -660,64 +684,84 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
         );
       case 'curly':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.3, height: proportions.headSize * 0.9 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-xl" style={{ 
+            width: proportions.headSize * 1.5, 
+            height: proportions.headSize * 1.0,
+            marginTop: '-3px' // Overlap for voluminous hair
+          }}>
             {/* Multiple curly strands */}
-            {Array.from({length: 12}).map((_, i) => (
-              <circle key={i} cx={20 + (i%4)*15} cy={25 + (i%2)*10} r="6" fill={config.hairColor} opacity="0.8" />
+            {Array.from({length: 16}).map((_, i) => (
+              <circle key={i} cx={15 + (i%4)*17} cy={20 + (i%2)*12} r="7" fill={config.hairColor} opacity="0.85" />
             ))}
             <path d="M10 40 Q50 10 90 40" fill={config.hairColor} />
             {/* Shadow effect */}
-            <ellipse cx="50" cy="60" rx="30" ry="12" fill="rgba(0,0,0,0.05)" />
+            <ellipse cx="50" cy="65" rx="35" ry="15" fill="rgba(0,0,0,0.08)" />
           </svg>
         );
       case 'long':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 1.4 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-xl" style={{ 
+            width: proportions.headSize * 1.4, 
+            height: proportions.headSize * 1.5,
+            marginTop: '-5px' // Significant overlap for long hair
+          }}>
             <path d="M10 40 Q10 0 50 0 Q90 0 90 40 L95 90 Q50 80 5 90 Z" fill={config.hairColor} />
-            <path d="M20 40 L30 80" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
-            <path d="M80 40 L70 80" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
+            <path d="M20 40 L30 80" stroke="rgba(0,0,0,0.15)" strokeWidth="2" />
+            <path d="M80 40 L70 80" stroke="rgba(0,0,0,0.15)" strokeWidth="2" />
             {/* Hair strands */}
-            {Array.from({length: 16}).map((_, i) => (
-              <path key={i} d={`M${15 + i*5} 35 Q${25 + i*5} 50 ${15 + i*5} 35`} stroke={config.hairColor} strokeWidth="1.5" fill="none" />
+            {Array.from({length: 20}).map((_, i) => (
+              <path key={i} d={`M${10 + i*4} 35 Q${25 + i*4} 50 ${15 + i*4} 35`} stroke={config.hairColor} strokeWidth="1.5" fill="none" />
             ))}
             {/* Shadow for depth */}
-            <ellipse cx="50" cy="70" rx="35" ry="10" fill="rgba(0,0,0,0.08)" />
+            <ellipse cx="50" cy="75" rx="40" ry="12" fill="rgba(0,0,0,0.1)" />
           </svg>
         );
       case 'pompadour':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.7 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-xl" style={{ 
+            width: proportions.headSize * 1.3, 
+            height: proportions.headSize * 0.8,
+            marginTop: '-2px' // Slight overlap for volume
+          }}>
             <path d="M10 35 Q10 5 50 5 Q90 5 90 35 Q50 25 10 35" fill={config.hairColor} />
-            <path d="M30 25 Q50 15 70 25" stroke="rgba(0,0,0,0.1)" strokeWidth="2" fill="none" />
+            <path d="M30 25 Q50 15 70 25" stroke="rgba(0,0,0,0.15)" strokeWidth="2" fill="none" />
             {/* Volume effect */}
-            <ellipse cx="50" cy="50" rx="25" ry="15" fill={config.hairColor} opacity="0.3" />
+            <ellipse cx="50" cy="50" rx="28" ry="18" fill={config.hairColor} opacity="0.4" />
           </svg>
         );
       case 'spike':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-xl" style={{ 
+            width: proportions.headSize * 1.3, 
+            height: proportions.headSize * 0.9,
+            marginTop: '-2px' // Overlap for sharp style
+          }}>
             <path d="M10 35 L20 10 L30 30 L50 0 L70 30 L80 10 L90 35 Z" fill={config.hairColor} />
             {/* Sharp edges */}
-            <path d="M20 35 L20 10 M30 30" stroke="rgba(0,0,0,0.2)" strokeWidth="1" fill="none" />
-            <path d="M50 0 L70 30 M80 10" stroke="rgba(0,0,0,0.2)" strokeWidth="1" fill="none" />
+            <path d="M20 35 L20 10 M30 30" stroke="rgba(0,0,0,0.25)" strokeWidth="1" fill="none" />
+            <path d="M50 0 L70 30 M80 10" stroke="rgba(0,0,0,0.25)" strokeWidth="1" fill="none" />
             {/* Shadow */}
-            <ellipse cx="50" cy="60" rx="20" ry="8" fill="rgba(0,0,0,0.1)" />
+            <ellipse cx="50" cy="60" rx="25" ry="10" fill="rgba(0,0,0,0.15)" />
           </svg>
         );
       case 'textured':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-xl" style={{ 
+            width: proportions.headSize * 1.4, 
+            height: proportions.headSize * 0.9,
+            marginTop: '-3px' // Overlap for textured style
+          }}>
             <defs>
               <pattern id="texturePattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-                <rect width="20" height="20" fill={config.hairColor} opacity="0.3" />
+                <rect width="20" height="20" fill={config.hairColor} opacity="0.4" />
                 <rect width="20" height="20" fill="none" stroke={config.hairColor} strokeWidth="0.5" />
               </pattern>
             </defs>
             <path d="M10 35 Q15 10 50 10 Q85 10 90 35" fill="none" stroke={config.hairColor} strokeWidth="15" strokeLinecap="round" />
-            <path d="M30 20 Q50 15 70 20" stroke="rgba(255,255,255,0.2)" strokeWidth="2" fill="none" />
+            <path d="M30 20 Q50 15 70 20" stroke="rgba(255,255,255,0.25)" strokeWidth="2" fill="none" />
             <rect x="15" y="25" width="70" height="40" fill="url(#texturePattern)" />
             {/* Shadow */}
-            <ellipse cx="50" cy="65" rx="30" ry="12" fill="rgba(0,0,0,0.1)" />
+            <ellipse cx="50" cy="70" rx="35" ry="15" fill="rgba(0,0,0,0.12)" />
           </svg>
         );
       default:
@@ -726,7 +770,12 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
   };
 
   return (
-    <div className="absolute" style={{ top: -2, left: '50%', transform: 'translateX(-50%)' }}>
+    <div className="absolute" style={{ 
+      top: '0px', 
+      left: '50%', 
+      transform: 'translateX(-50%)',
+      zIndex: 40 // Ensure hair is on top of head
+    }}>
       {getHairStyle()}
     </div>
   );
@@ -872,7 +921,7 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
       {/* Ground Shadow */}
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-2 bg-black/10 rounded-full blur-md" />
 
-      {/* Avatar Container - PERFECT POSITIONING */}
+      {/* Avatar Container - Single Unit */}
       <div 
         className="relative"
         style={{ 
@@ -888,7 +937,7 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
         </div>
 
         {/* Torso Layer - Middle */}
-        <div className="absolute bottom-[35px] left-1/2 -translate-x-1/2 z-20">
+        <div className="absolute bottom-[32px] left-1/2 -translate-x-1/2 z-20">
           <AvatarTorso config={config} proportions={proportions} />
         </div>
 
@@ -897,13 +946,9 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
           <AvatarHead config={config} proportions={proportions} profileImg={profileImg} useProfilePic={useProfilePic} />
         </div>
 
-        {/* Hair Layer - Topmost */}
+        {/* Hair Layer - Positioned on Head */}
         {config.hairStyle !== 'none' && (
-          <div className="absolute z-40" style={{ 
-            top: -4, // Closer to head
-            left: '50%', 
-            transform: 'translateX(-50%)' 
-          }}>
+          <div className="absolute z-40" style={{ top: '0px', left: '50%', transform: 'translateX(-50%)' }}>
             <AvatarHair config={config} proportions={proportions} />
           </div>
         )}
