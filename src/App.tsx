@@ -728,28 +728,30 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
 
       {/* Avatar Container - Single Unit */}
       <div 
-        className="relative flex flex-col items-center"
+        className="relative"
         style={{ 
           animation: isWalking ? 'v-walk 0.5s infinite ease-in-out' : 'v-breathe 3s infinite ease-in-out',
-          transformOrigin: 'center bottom'
+          transformOrigin: 'center bottom',
+          width: proportions.totalHeight,
+          height: proportions.totalHeight
         }}
       >
-        {/* Legs Layer */}
-        <div className="relative z-10">
+        {/* Legs Layer - Bottom */}
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-10">
           <AvatarLegs config={config} proportions={proportions} />
         </div>
 
-        {/* Torso Layer */}
-        <div className="relative z-20 -mt-1">
+        {/* Torso Layer - Middle */}
+        <div className="absolute bottom-[32px] left-1/2 -translate-x-1/2 z-20">
           <AvatarTorso config={config} proportions={proportions} />
         </div>
 
-        {/* Head Layer */}
-        <div className="relative z-30 -mt-1">
+        {/* Head Layer - Top */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30">
           <AvatarHead config={config} proportions={proportions} profileImg={profileImg} useProfilePic={useProfilePic} />
         </div>
 
-        {/* Hair Layer */}
+        {/* Hair Layer - Topmost */}
         {config.hairStyle !== 'none' && (
           <div className="absolute z-40" style={{ top: -proportions.headSize + 2, left: '50%', transform: 'translateX(-50%)' }}>
             <AvatarHair config={config} proportions={proportions} />
