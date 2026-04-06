@@ -40,7 +40,8 @@ import {
   Lock,
   Search,
   Settings as SettingsIcon,
-  Smile as SmileIcon
+  Smile as SmileIcon,
+  Beaker
 } from 'lucide-react';
 import { 
   auth, db, googleProvider, signInWithPopup, onAuthStateChanged, signOut,
@@ -69,6 +70,7 @@ interface AvatarConfig {
   pantsColor: string;
   bodyType: 'slim' | 'normal' | 'wide';
   useGooglePhoto?: boolean;
+  useBetaAvatar?: boolean; // New beta flag
 }
 
 interface RemotePlayer {
@@ -641,6 +643,48 @@ const AvatarHair = ({ config, proportions }: { config: AvatarConfig; proportions
   );
 };
 
+// Beta Avatar System - Separate from production system
+const BetaAvatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal, photoURL }: { 
+  config: AvatarConfig; 
+  isWalking: boolean; 
+  isSpeaking: boolean; 
+  message?: string; 
+  emote?: string; 
+  status?: string; 
+  isLocal?: boolean;
+  photoURL?: string;
+}) => {
+  return (
+    <div className="relative" style={{ 
+      width: 80, 
+      height: 80,
+      transform: 'scale(0.8)'
+    }}>
+      <div className="text-xs text-red-600 font-bold mb-2">BETA AVATAR</div>
+      
+      {/* Simple geometric avatar for testing */}
+      <div className="relative w-full h-full">
+        {/* Head */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-8 bg-blue-500 rounded-full shadow-lg" />
+        
+        {/* Body */}
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 w-12 h-16 bg-green-500 rounded-lg shadow-lg" />
+        
+        {/* Legs */}
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex gap-1">
+          <div className="w-4 h-8 bg-gray-700 rounded" />
+          <div className="w-4 h-8 bg-gray-700 rounded" />
+        </div>
+      </div>
+      
+      {/* Beta indicators */}
+      <div className="absolute -top-4 -right-4 text-xs bg-yellow-400 text-black px-2 py-1 rounded">
+        EXPERIMENTAL
+      </div>
+    </div>
+  );
+});
+
 // Production-grade Avatar Component
 const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal, photoURL }: { 
   config: AvatarConfig; 
@@ -652,6 +696,19 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
   isLocal?: boolean;
   photoURL?: string;
 }) => {
+  // Use beta avatar if flag is set, otherwise use production avatar
+  if (config.useBetaAvatar) {
+    return <BetaAvatar 
+      config={config} 
+      isWalking={isWalking} 
+      isSpeaking={isSpeaking} 
+      message={message} 
+      emote={emote} 
+      status={status} 
+      isLocal={isLocal} 
+      photoURL={photoURL} 
+    />;
+  }
   const profileImg = photoURL || (isLocal ? auth.currentUser?.photoURL : null);
   const useProfilePic = profileImg && config.useGooglePhoto;
 
@@ -1417,6 +1474,11 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
     localStorage.setItem('avatarConfig', JSON.stringify(newConfig));
   };
 
+  // Add beta toggle option
+  const toggleBetaAvatar = () => {
+    updateConfig({ useBetaAvatar: !config.useBetaAvatar });
+  };
+
   const handleComplete = async () => {
     // Final validation
     const validConfig = {
@@ -1494,6 +1556,19 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
             >
               <Zap className="w-3 h-3" />
               Randomize Selection
+            </button>
+            
+            {/* Beta Avatar Toggle */}
+            <button 
+              onClick={toggleBetaAvatar}
+              className={`w-full flex items-center justify-center gap-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${
+                config.useBetaAvatar 
+                  ? 'bg-red-600 text-white shadow-2xl' 
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Beaker className="w-4 h-4" />
+              {config.useBetaAvatar ? 'Disable Beta' : 'Enable Beta Avatar'}
             </button>
           </div>
         </div>
