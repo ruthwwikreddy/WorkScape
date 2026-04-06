@@ -112,7 +112,68 @@ const WALLS: Rect[] = [
 
 // --- Components ---
 
+// Helper to detect touch devices
+const isTouchDevice = () => {
+  return (('ontouchstart' in window) ||
+     (navigator.maxTouchPoints > 0));
+};
+
+const DeviceNotSupported = ({ onBack }: { onBack: () => void }) => (
+  <div className="fixed inset-0 z-[5000] bg-black flex flex-col items-center justify-center p-8 text-center">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="max-w-md"
+    >
+      <div className="w-24 h-24 bg-white/10 rounded-3xl flex items-center justify-center mx-auto mb-8">
+        <Monitor className="w-12 h-12 text-white" />
+      </div>
+      <h1 className="text-4xl font-black text-white mb-4 tracking-tight">Desktop Only</h1>
+      <p className="text-slate-400 font-medium text-lg leading-relaxed mb-12">
+        WorkSpace is designed for high-performance desktop collaboration. Mobile and tablet devices are not supported at this time.
+      </p>
+      <div className="bg-white/5 border border-white/10 p-6 rounded-2xl mb-12 text-left">
+        <p className="text-xs font-black text-white/40 uppercase tracking-widest mb-4">Recommended Devices</p>
+        <ul className="space-y-3 text-white font-bold">
+          <li className="flex items-center gap-3">
+            <div className="w-1.5 h-1.5 bg-white rounded-full" />
+            MacBook Pro / Air
+          </li>
+          <li className="flex items-center gap-3">
+            <div className="w-1.5 h-1.5 bg-white rounded-full" />
+            Windows Laptops
+          </li>
+          <li className="flex items-center gap-3">
+            <div className="w-1.5 h-1.5 bg-white rounded-full" />
+            Desktop Workstations
+          </li>
+        </ul>
+      </div>
+      <button 
+        onClick={onBack}
+        className="px-8 py-4 bg-white text-black rounded-xl font-black hover:scale-105 transition-all"
+      >
+        Back to Home
+      </button>
+    </motion.div>
+  </div>
+);
+
 const LandingPage = ({ onStart }: { onStart: () => void }) => {
+  const [showUnsupported, setShowUnsupported] = useState(false);
+
+  const handleStart = () => {
+    if (isTouchDevice()) {
+      setShowUnsupported(true);
+    } else {
+      onStart();
+    }
+  };
+
+  if (showUnsupported) {
+    return <DeviceNotSupported onBack={() => setShowUnsupported(false)} />;
+  }
+
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden font-sans">
       {/* Background Grid */}
@@ -156,7 +217,7 @@ const LandingPage = ({ onStart }: { onStart: () => void }) => {
           className="flex flex-col sm:flex-row gap-4"
         >
           <button
-            onClick={onStart}
+            onClick={handleStart}
             className="px-10 py-5 bg-white text-black rounded-2xl font-black text-xl shadow-[0_20px_50px_rgba(255,255,255,0.2)] hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
           >
             Get Started
@@ -284,7 +345,7 @@ const SettingsModal = ({
   );
 };
 
-const Avatar = ({ config, isWalking, isSpeaking, message, emote, status, isLocal }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean }) => {
+const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean }) => {
   const bodyWidth = config.bodyType === 'slim' ? 32 : config.bodyType === 'wide' ? 48 : 40;
   
   const statusColors: Record<string, string> = {
@@ -294,7 +355,20 @@ const Avatar = ({ config, isWalking, isSpeaking, message, emote, status, isLocal
   };
 
   return (
-    <div className={`relative flex items-center justify-center transition-all duration-300 ${isWalking ? 'animate-bounce' : ''}`} style={{ width: 60, height: 60 }}>
+    <div 
+      className={`relative flex items-center justify-center transition-all duration-300 ${isWalking ? 'animate-[bounce_0.6s_infinite]' : ''}`} 
+      style={{ 
+        width: 60, 
+        height: 60,
+        animation: isWalking ? 'avatar-walk 0.6s infinite ease-in-out' : 'none'
+      }}
+    >
+      <style>{`
+        @keyframes avatar-walk {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px); }
+        }
+      `}</style>
       {/* Status Indicator */}
       {status && (
         <motion.div 
@@ -401,7 +475,7 @@ const Avatar = ({ config, isWalking, isSpeaking, message, emote, status, isLocal
       </div>
     </div>
   );
-};
+});
 
 interface Task {
   id: string;
@@ -410,7 +484,7 @@ interface Task {
   uid?: string;
 }
 
-const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask, onDeleteTask, onEditTask, onOpenSettings }: { 
+const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask, onDeleteTask, onEditTask, onOpenSettings, onMinimapClick }: { 
   zone: string; 
   tasks: Task[]; 
   completedCount: number; 
@@ -421,6 +495,7 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask
   onDeleteTask: (id: string) => void;
   onEditTask: (id: string, text: string) => void;
   onOpenSettings: () => void;
+  onMinimapClick: (p: Point) => void;
 }) => {
   const [time, setTime] = useState(new Date());
   const [showShareTooltip, setShowShareTooltip] = useState(false);
@@ -632,9 +707,21 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="bg-black/90 backdrop-blur-md p-2 rounded-xl shadow-2xl w-48 h-32 relative overflow-hidden border border-white/10"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * OFFICE_WIDTH;
+            const y = ((e.clientY - rect.top) / rect.height) * OFFICE_HEIGHT;
+            onMinimapClick({ x, y });
+          }}
+          className="bg-black/90 backdrop-blur-md p-2 rounded-xl shadow-2xl w-48 h-32 relative overflow-hidden border border-white/10 cursor-crosshair group"
         >
           <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:10px_10px]" />
+          
+          {/* Click to Teleport Tooltip */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+            <span className="text-[8px] font-black uppercase tracking-widest bg-white text-black px-2 py-1 rounded">Click to Teleport</span>
+          </div>
+
           {/* Character Dot */}
           <motion.div 
             animate={{ 
@@ -660,9 +747,9 @@ const HUD = ({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask
       </div>
     </div>
   );
-};
+});
 
-const UserMenu = ({ name, playersCount }: { name: string; playersCount: number }) => (
+const UserMenu = React.memo(({ name, playersCount }: { name: string; playersCount: number }) => (
   <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
     <div className="bg-black p-2 rounded-full shadow-lg flex items-center gap-3 pr-5 border border-white/10">
       <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-black shadow-inner">
@@ -678,7 +765,7 @@ const UserMenu = ({ name, playersCount }: { name: string; playersCount: number }
       <span className="text-xs font-bold text-white">{playersCount}</span>
     </div>
   </div>
-);
+));
 
 const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, avatar?: AvatarConfig, status?: string, password?: string) => void; user: any }) => {
   const [name, setName] = useState("");
@@ -708,12 +795,24 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
 
   const handleCreateRoom = async () => {
     if (!name || !room) return;
+    
+    let currentUser = user;
+    if (!currentUser) {
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        currentUser = result.user;
+      } catch (err) {
+        console.error("Auth failed", err);
+        return;
+      }
+    }
+
     const roomData = {
       id: room,
       name: room,
       password: password || "",
       isPublic,
-      createdBy: user?.uid || "anonymous",
+      createdBy: currentUser.uid,
       createdAt: new Date().toISOString()
     };
     await setDoc(doc(db, 'rooms', room), roomData);
@@ -1058,7 +1157,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
   );
 };
 
-const RemotePlayerAvatar = ({ player, localPos, localIsPrivate, localZone }: { player: RemotePlayer; localPos: Point; localIsPrivate: boolean; localZone: string; key?: string }) => {
+const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, localZone }: { player: RemotePlayer; localPos: Point; localIsPrivate: boolean; localZone: string; key?: string }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isHovered, setIsHovered] = useState(false);
   const dist = Math.hypot(player.pos.x - localPos.x, player.pos.y - localPos.y);
@@ -1073,21 +1172,26 @@ const RemotePlayerAvatar = ({ player, localPos, localIsPrivate, localZone }: { p
   // Meeting Room Isolation Logic:
   const isMeetingRoom = (z: string) => z && z.startsWith("Conference Room");
   const inSameMeetingRoom = isMeetingRoom(localZone) && localZone === player.zone;
-  const oneInMeetingRoom = isMeetingRoom(localZone) || isMeetingRoom(player.zone);
+  const localInMeetingRoom = isMeetingRoom(localZone);
+  const playerInMeetingRoom = isMeetingRoom(player.zone);
   
   // Private Bubble Logic: 
   const inSameBubble = dist < 100;
   const isMutedByPrivate = (player.isPrivate || localIsPrivate) && !inSameBubble;
   
   let volume = 0;
-  if (oneInMeetingRoom) {
+  // STRICT ISOLATION: 
+  // 1. If local is in a meeting room, only hear people in the SAME room.
+  // 2. If local is NOT in a meeting room, but player IS, player is inaudible.
+  if (localInMeetingRoom) {
     if (inSameMeetingRoom) {
-      // Nuanced falloff curve: Inverse square law
       const normalizedDist = dist / (VOICE_RADIUS * 1.5);
       volume = normalizedDist < 1 ? 1 / (1 + Math.pow(normalizedDist * 2, 2)) : 0;
     } else {
-      volume = 0;
+      volume = 0; // Completely inaudible if not in same room
     }
+  } else if (playerInMeetingRoom) {
+    volume = 0; // Completely inaudible to those outside
   } else if (!isMutedByPrivate) {
     const normalizedDist = dist / VOICE_RADIUS;
     volume = normalizedDist < 1 ? 1 / (1 + Math.pow(normalizedDist * 2, 2)) : 0;
@@ -1148,7 +1252,7 @@ const RemotePlayerAvatar = ({ player, localPos, localIsPrivate, localZone }: { p
       <audio ref={audioRef} autoPlay />
     </motion.div>
   );
-};
+});
 
 export default function App() {
   const [showLanding, setShowLanding] = useState(true);
@@ -1171,9 +1275,15 @@ export default function App() {
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const [localEmote, setLocalEmote] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState("");
-  const [showEmotePicker, setShowEmotePicker] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
 
-  const socketRef = useRef<Socket | null>(null);
+  const keysRef = useRef<Record<string, boolean>>({});
+  const remotePlayersRef = useRef<Record<string, RemotePlayer>>({});
+  const isWalkingRef = useRef(false);
+  const angleRef = useRef(180);
+  const currentZoneRef = useRef("Lobby");
+  const tasksRef = useRef<Task[]>([]);
   const peersRef = useRef<Record<string, Peer.Instance>>({});
   const localStreamRef = useRef<MediaStream | null>(null);
   const requestRef = useRef<number>(null);
@@ -1181,6 +1291,8 @@ export default function App() {
   const lastEmitRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
   const pendingInputs = useRef<{ seq: number; pos: Point }[]>([]);
+  const socketRef = useRef<Socket | null>(null);
+  const [showEmotePicker, setShowEmotePicker] = useState(false);
 
   // Firebase Auth
   useEffect(() => {
@@ -1252,31 +1364,52 @@ export default function App() {
   }, []);
 
   const handleJoin = async (name: string, room: string, avatar?: AvatarConfig, initialStatus?: string, password?: string) => {
-    if (password) {
-      const roomDoc = await getDoc(doc(db, 'rooms', room));
-      if (roomDoc.exists() && roomDoc.data().password && roomDoc.data().password !== password) {
-        // Use a more subtle error indication if possible, but alert is okay for now
-        alert("Incorrect room password!");
-        return;
-      }
-    }
-
-    if (!user) {
+    let currentUser = user;
+    if (!currentUser) {
       try {
         const result = await signInWithPopup(auth, googleProvider);
+        currentUser = result.user;
         setUser(result.user);
         setUserName(result.user.displayName || name);
       } catch (err) {
         console.error("Auth failed", err);
         setUserName(name);
+        // If auth fails, we might still want to allow joining as guest? 
+        // But rules require isAuthenticated() for private rooms.
       }
     } else {
       setUserName(name);
     }
 
+    if (password) {
+      const roomDoc = await getDoc(doc(db, 'rooms', room));
+      if (roomDoc.exists() && roomDoc.data().password && roomDoc.data().password !== password) {
+        alert("Incorrect room password!");
+        return;
+      }
+    }
+
     if (avatar) setAvatarConfig(avatar);
     if (initialStatus) setStatus(initialStatus as any);
     setRoomId(room);
+  };
+
+  const handleMinimapClick = (p: Point) => {
+    // Check for collisions at target point
+    if (checkCollision(p.x, p.y)) return;
+    
+    posRef.current = p;
+    setPos(p);
+    
+    // Emit teleport event
+    if (socketRef.current) {
+      socketRef.current.emit('user:moved', {
+        pos: p,
+        angle: angleRef.current,
+        isWalking: false,
+        zone: currentZoneRef.current
+      });
+    }
   };
 
   const handleAddTask = async (text: string) => {
@@ -1352,7 +1485,7 @@ export default function App() {
     if (WALLS.some(w => !(p.right < w.left || p.left > w.right || p.bottom < w.top || p.top > w.bottom))) return true;
     
     // Player collision
-    const otherPlayers = Object.values(remotePlayers) as RemotePlayer[];
+    const otherPlayers = Object.values(remotePlayersRef.current) as RemotePlayer[];
     if (otherPlayers.some(op => Math.hypot(nx - op.pos.x, ny - op.pos.y) < 40)) return true;
 
     return false;
@@ -1364,8 +1497,10 @@ export default function App() {
       localStreamRef.current = stream;
       // Initially mute
       stream.getAudioTracks().forEach(track => track.enabled = false);
+      setMicError(null);
     } catch (err) {
       console.error("Mic access denied", err);
+      setMicError("Microphone access denied. Proximity voice will not work.");
     }
   };
 
@@ -1421,12 +1556,18 @@ export default function App() {
 
     socket.on("connect", () => {
       console.log("Socket connected:", socket.id);
+      setIsConnected(true);
+    });
+
+    socket.on("disconnect", () => {
+      setIsConnected(false);
     });
 
     socket.on("init", (users: Record<string, any>) => {
       console.log("Received init users:", Object.keys(users));
       const others = { ...users };
       if (socket.id) delete others[socket.id];
+      remotePlayersRef.current = others;
       setRemotePlayers(others);
       
       // Newcomer initiates to everyone already in the room
@@ -1443,28 +1584,30 @@ export default function App() {
 
     socket.on("user:joined", (user: any) => {
       console.log("User joined:", user.id);
+      remotePlayersRef.current[user.id] = user;
       setRemotePlayers(prev => ({ ...prev, [user.id]: user }));
       // We don't initiate here; we wait for their signal
     });
 
     socket.on("user:moved", (data: any) => {
-      setRemotePlayers(prev => {
-        if (!prev[data.id]) return prev;
-        const zone = ZONES.find(z => 
-          data.pos.x >= z.bounds.left && data.pos.x <= z.bounds.right && 
-          data.pos.y >= z.bounds.top && data.pos.y <= z.bounds.bottom
-        );
-        return { 
-          ...prev, 
-          [data.id]: { 
-            ...prev[data.id], 
-            ...data, 
-            zone: zone?.name || "Lobby",
-            prevPos: prev[data.id].pos,
-            lastUpdate: Date.now()
-          } 
-        };
-      });
+      const prevPlayer = remotePlayersRef.current[data.id];
+      if (!prevPlayer) return;
+
+      const zone = ZONES.find(z => 
+        data.pos.x >= z.bounds.left && data.pos.x <= z.bounds.right && 
+        data.pos.y >= z.bounds.top && data.pos.y <= z.bounds.bottom
+      );
+      
+      const updatedPlayer = { 
+        ...prevPlayer, 
+        ...data, 
+        zone: zone?.name || "Lobby",
+        prevPos: prevPlayer.pos,
+        lastUpdate: Date.now()
+      };
+
+      remotePlayersRef.current[data.id] = updatedPlayer;
+      setRemotePlayers(prev => ({ ...prev, [data.id]: updatedPlayer }));
     });
 
     socket.on("move:ack", (data: { seq: number, pos: Point }) => {
@@ -1483,47 +1626,49 @@ export default function App() {
     });
 
     socket.on("user:speaking", (data: any) => {
-      setRemotePlayers(prev => {
-        if (!prev[data.id]) return prev;
-        return { ...prev, [data.id]: { ...prev[data.id], isSpeaking: data.isSpeaking } };
-      });
+      if (remotePlayersRef.current[data.id]) {
+        remotePlayersRef.current[data.id].isSpeaking = data.isSpeaking;
+        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], isSpeaking: data.isSpeaking } }));
+      }
     });
 
     socket.on("user:status", (data: any) => {
-      setRemotePlayers(prev => {
-        if (!prev[data.id]) return prev;
-        return { ...prev, [data.id]: { ...prev[data.id], status: data.status, isPrivate: data.isPrivate } };
-      });
+      if (remotePlayersRef.current[data.id]) {
+        remotePlayersRef.current[data.id].status = data.status;
+        remotePlayersRef.current[data.id].isPrivate = data.isPrivate;
+        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], status: data.status, isPrivate: data.isPrivate } }));
+      }
     });
 
     socket.on("chat:message", (data: any) => {
-      setRemotePlayers(prev => {
-        if (!prev[data.id]) return prev;
-        return { ...prev, [data.id]: { ...prev[data.id], message: data.message } };
-      });
+      if (remotePlayersRef.current[data.id]) {
+        remotePlayersRef.current[data.id].message = data.message;
+        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], message: data.message } }));
+      }
       setTimeout(() => {
-        setRemotePlayers(prev => {
-          if (!prev[data.id]) return prev;
-          return { ...prev, [data.id]: { ...prev[data.id], message: undefined } };
-        });
+        if (remotePlayersRef.current[data.id]) {
+          remotePlayersRef.current[data.id].message = undefined;
+          setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], message: undefined } }));
+        }
       }, 5000);
     });
 
     socket.on("chat:emote", (data: any) => {
-      setRemotePlayers(prev => {
-        if (!prev[data.id]) return prev;
-        return { ...prev, [data.id]: { ...prev[data.id], emote: data.emote } };
-      });
+      if (remotePlayersRef.current[data.id]) {
+        remotePlayersRef.current[data.id].emote = data.emote;
+        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], emote: data.emote } }));
+      }
       setTimeout(() => {
-        setRemotePlayers(prev => {
-          if (!prev[data.id]) return prev;
-          return { ...prev, [data.id]: { ...prev[data.id], emote: undefined } };
-        });
+        if (remotePlayersRef.current[data.id]) {
+          remotePlayersRef.current[data.id].emote = undefined;
+          setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], emote: undefined } }));
+        }
       }, 3000);
     });
 
     socket.on("user:left", (id: string) => {
       console.log("User left:", id);
+      delete remotePlayersRef.current[id];
       setRemotePlayers(prev => {
         const next = { ...prev };
         delete next[id];
@@ -1567,6 +1712,7 @@ export default function App() {
     let dx = 0;
     let dy = 0;
 
+    const keys = keysRef.current;
     if (keys['w'] || keys['arrowup']) dy -= SPEED;
     if (keys['s'] || keys['arrowdown']) dy += SPEED;
     if (keys['a'] || keys['arrowleft']) dx -= SPEED;
@@ -1594,10 +1740,14 @@ export default function App() {
         finalY >= z.bounds.top && finalY <= z.bounds.bottom
       );
       const newZoneName = zone?.name || "Lobby";
-      if (newZoneName !== currentZone) setCurrentZone(newZoneName);
+      if (newZoneName !== currentZoneRef.current) {
+        currentZoneRef.current = newZoneName;
+        setCurrentZone(newZoneName);
+      }
 
       const moveAngle = Math.atan2(dy, dx) * 180 / Math.PI;
       const newAngle = moveAngle + 90;
+      angleRef.current = newAngle;
       setAngle(newAngle);
 
       // Client-side prediction: Update local state immediately
@@ -1617,12 +1767,13 @@ export default function App() {
       }
     }
 
-    if (isWalking !== currentlyWalking) {
+    if (isWalkingRef.current !== currentlyWalking) {
+      isWalkingRef.current = currentlyWalking;
       setIsWalking(currentlyWalking);
       if (!currentlyWalking) {
         socketRef.current?.emit("move", { 
           pos: posRef.current, 
-          angle, 
+          angle: angleRef.current, 
           isWalking: false,
           seq: seqRef.current++
         });
@@ -1630,14 +1781,14 @@ export default function App() {
     }
 
     requestRef.current = requestAnimationFrame(loop);
-  }, [keys, currentZone, tasks, isWalking, angle, remotePlayers]);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
       
       const key = e.key.toLowerCase();
-      setKeys(prev => ({ ...prev, [key]: true }));
+      keysRef.current[key] = true;
 
       // Keyboard Shortcuts
       if (key === 's') {
@@ -1655,7 +1806,7 @@ export default function App() {
 
       if (key === 'e') {
         setTasks(prev => prev.map(t => {
-          if (!t.done && t.zone === currentZone) return { ...t, done: true };
+          if (!t.done && t.zone === currentZoneRef.current) return { ...t, done: true };
           return t;
         }));
       }
@@ -1668,7 +1819,7 @@ export default function App() {
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      setKeys(prev => ({ ...prev, [key]: false }));
+      keysRef.current[key] = false;
       if (key === ' ' && localStreamRef.current) {
         localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
         setIsSpeaking(false);
@@ -1685,7 +1836,7 @@ export default function App() {
       window.removeEventListener('keyup', handleKeyUp);
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [loop, currentZone]);
+  }, [loop]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -1694,7 +1845,18 @@ export default function App() {
 
   const completedCount = tasks.filter(t => t.done).length;
 
-  if (showLanding && !userName) return <LandingPage onStart={() => setShowLanding(false)} />;
+  const handleStart = async () => {
+    if (!user) {
+      try {
+        await signInWithPopup(auth, googleProvider);
+      } catch (err) {
+        console.error("Login failed", err);
+      }
+    }
+    setShowLanding(false);
+  };
+
+  if (showLanding && !userName) return <LandingPage onStart={handleStart} />;
   if (!userName || !roomId) return <EntryModal onJoin={handleJoin} user={user} />;
   if (!avatarConfig) return <CharacterCustomizationModal onComplete={setAvatarConfig} user={user} userName={userName} />;
 
@@ -1707,6 +1869,43 @@ export default function App() {
         roomId={roomId} 
         onLogout={handleLogout}
       />
+      {/* Connection Overlay */}
+      <AnimatePresence>
+        {!isConnected && roomId && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[5000] bg-black/60 backdrop-blur-sm flex items-center justify-center"
+          >
+            <div className="bg-white p-8 rounded-[32px] shadow-2xl flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin" />
+              <p className="font-black uppercase tracking-widest text-xs">Connecting to Workspace...</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mic Status Indicator */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-2 pointer-events-none">
+        {micError ? (
+          <div className="bg-rose-500 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2">
+            <MicOff className="w-3 h-3" />
+            {micError}
+          </div>
+        ) : (
+          <motion.div 
+            animate={isSpeaking ? { scale: [1, 1.05, 1] } : {}}
+            className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 transition-all pointer-events-auto ${isSpeaking ? 'bg-emerald-500 text-white' : 'bg-black/80 backdrop-blur text-white/40'}`}
+          >
+            {isSpeaking ? <Mic className="w-4 h-4 animate-pulse" /> : <MicOff className="w-4 h-4" />}
+            <span className="text-[10px] font-black uppercase tracking-[0.2em]">
+              {isSpeaking ? 'Speaking' : 'Hold SPACE to Talk'}
+            </span>
+          </motion.div>
+        )}
+      </div>
+
       <HUD 
         zone={currentZone} 
         tasks={tasks} 
@@ -1718,6 +1917,7 @@ export default function App() {
         onDeleteTask={handleDeleteTask}
         onEditTask={handleEditTask}
         onOpenSettings={() => setShowSettings(true)}
+        onMinimapClick={handleMinimapClick}
       />
       <UserMenu name={userName} playersCount={Object.keys(remotePlayers).length + 1} />
       

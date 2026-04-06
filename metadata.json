@@ -1,6 +1,6 @@
 {
-  "name": "WorkSpace",
-  "description": "A real-time multiplayer virtual workspace with customizable avatars and proximity voice chat.",
+  "name": "WorkSpace | Virtual Office & Remote Collaboration Platform",
+  "description": "Experience the future of remote work with WorkSpace. A real-time 2D multiplayer virtual office featuring customizable avatars, proximity-based voice chat, and dedicated meeting rooms for seamless team collaboration.",
   "requestFramePermissions": [
     "microphone"
   ]
