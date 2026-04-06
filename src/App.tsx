@@ -61,11 +61,14 @@ interface Zone { name: string; bounds: Rect; }
 
 interface AvatarConfig {
   skinColor: string;
-  hairStyle: 'none' | 'short' | 'long' | 'pompadour';
+  hairStyle: 'none' | 'short' | 'long' | 'pompadour' | 'curly' | 'bald' | 'spike' | 'fade' | 'textured';
   hairColor: string;
+  shirtStyle: 'tshirt' | 'hoodie' | 'suit' | 'dress';
   shirtColor: string;
+  pantsStyle: 'jeans' | 'shorts' | 'suit-pants';
   pantsColor: string;
   bodyType: 'slim' | 'normal' | 'wide';
+  useGooglePhoto?: boolean;
 }
 
 interface RemotePlayer {
@@ -159,7 +162,7 @@ const DeviceNotSupported = ({ onBack }: { onBack: () => void }) => (
   </div>
 );
 
-const LandingPage = ({ onStart }: { onStart: () => void }) => {
+const LandingPage = ({ onStart, user, onLogout }: { onStart: () => void, user: any, onLogout: () => void }) => {
   const [showUnsupported, setShowUnsupported] = useState(false);
 
   const handleStart = () => {
@@ -179,6 +182,33 @@ const LandingPage = ({ onStart }: { onStart: () => void }) => {
       {/* Background Grid */}
       <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:40px_40px]" />
       
+      {/* Top Right Profile */}
+      <div className="fixed top-6 right-6 z-50">
+        {user ? (
+          <div className="flex items-center gap-3">
+            <div className="bg-white/10 backdrop-blur-md p-2 rounded-full border border-white/10 flex items-center gap-3 pr-4 group cursor-pointer hover:bg-white/20 transition-all">
+              <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="Profile" className="w-8 h-8 rounded-full border border-white/20" />
+              <div className="text-left">
+                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">Welcome back</p>
+                <p className="text-xs font-black text-white leading-none">{user.displayName || "Explorer"}</p>
+              </div>
+              <div className="overflow-hidden w-0 group-hover:w-auto transition-all flex border-l border-white/10 ml-2 pl-2 gap-2">
+                 <button onClick={onLogout} className="p-1.5 hover:bg-rose-500/20 rounded-lg text-rose-400">
+                    <LogOut className="w-4 h-4" />
+                 </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button 
+            onClick={onStart}
+            className="px-6 py-3 bg-white text-black rounded-xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all shadow-xl"
+          >
+            Login with Google
+          </button>
+        )}
+      </div>
+
       {/* Hero Section */}
       <div className="relative z-10 max-w-7xl mx-auto px-6 pt-24 pb-32 flex flex-col items-center text-center">
         <motion.div
@@ -265,13 +295,15 @@ const SettingsModal = ({
   onClose, 
   userName, 
   roomId, 
-  onLogout 
+  onLogout,
+  user
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   userName: string; 
   roomId: string;
   onLogout: () => void;
+  user: any;
 }) => {
   return (
     <AnimatePresence>
@@ -294,9 +326,13 @@ const SettingsModal = ({
               <section>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Current User</label>
                 <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white font-black">
-                    {userName.charAt(0).toUpperCase()}
-                  </div>
+                  {user?.photoURL ? (
+                    <img src={user.photoURL} alt="Profile" className="w-12 h-12 rounded-xl border border-slate-200" />
+                  ) : (
+                    <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center text-white font-black">
+                      {userName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <p className="font-black text-black">{userName}</p>
                     <p className="text-xs text-slate-500 font-bold">Authenticated Member</p>
@@ -345,137 +381,198 @@ const SettingsModal = ({
   );
 };
 
-const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean }) => {
-  const bodyWidth = config.bodyType === 'slim' ? 32 : config.bodyType === 'wide' ? 48 : 40;
-  
-  const statusColors: Record<string, string> = {
-    available: '#22c55e',
-    busy: '#ef4444',
-    focus: '#8b5cf6'
-  };
+const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal, photoURL }: { 
+  config: AvatarConfig; 
+  isWalking: boolean; 
+  isSpeaking: boolean; 
+  message?: string; 
+  emote?: string; 
+  status?: string; 
+  isLocal?: boolean;
+  photoURL?: string;
+}) => {
+  const bodyMetrics = useMemo(() => {
+    switch(config.bodyType) {
+      case 'slim': return { w: 34, h: 30, armX: 18, legX: 8 };
+      case 'wide': return { w: 54, h: 34, armX: 28, legX: 12 };
+      default: return { w: 44, h: 32, armX: 23, legX: 10 };
+    }
+  }, [config.bodyType]);
+
+  const profileImg = photoURL || (isLocal ? auth.currentUser?.photoURL : null);
 
   return (
-    <div 
-      className={`relative flex items-center justify-center transition-all duration-300 ${isWalking ? 'animate-[bounce_0.6s_infinite]' : ''}`} 
-      style={{ 
-        width: 60, 
-        height: 60,
-        animation: isWalking ? 'avatar-walk 0.6s infinite ease-in-out' : 'none'
-      }}
-    >
+    <div className="relative flex items-center justify-center" style={{ width: 64, height: 64 }}>
       <style>{`
-        @keyframes avatar-walk {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-4px); }
+        @keyframes v-walk {
+          0%, 100% { transform: translateY(0) rotate(0); }
+          25% { transform: translateY(-5px) rotate(-4deg); }
+          50% { transform: translateY(0) rotate(0); }
+          75% { transform: translateY(-5px) rotate(4deg); }
+        }
+        @keyframes v-breathe {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(0.98, 1.02) translateY(1px); }
+        }
+        @keyframes v-blink {
+          0%, 90%, 100% { transform: scaleY(1); }
+          95% { transform: scaleY(0); }
+        }
+        @keyframes v-swing-l {
+          0%, 100% { transform: rotate(-8deg); }
+          50% { transform: rotate(15deg); }
+        }
+        @keyframes v-swing-r {
+          0%, 100% { transform: rotate(8deg); }
+          50% { transform: rotate(-15deg); }
         }
       `}</style>
-      {/* Status Indicator */}
-      {status && (
-        <motion.div 
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          className="absolute -top-12 flex flex-col items-center gap-1 z-50"
-        >
-          <div 
-            className="w-3 h-3 rounded-full border-2 border-white shadow-sm"
-            style={{ backgroundColor: statusColors[status] || '#ccc' }}
-          />
-          <span className="text-[8px] font-black uppercase tracking-tighter bg-white/80 backdrop-blur px-1 rounded border border-slate-100">
-            {status}
-          </span>
-        </motion.div>
-      )}
 
-      {/* Emote Bubble */}
-      <AnimatePresence>
-        {emote && (
-          <motion.div
-            initial={{ scale: 0, y: 0 }}
-            animate={{ scale: 1.2, y: -50 }}
-            exit={{ scale: 0, opacity: 0 }}
-            className="absolute z-[1200] text-3xl pointer-events-none"
-          >
-            {emote}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Floating UI */}
+      <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
+        <AnimatePresence>
+          {message && (
+            <motion.div initial={{ opacity: 0, scale: 0.5, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.5 }} className="bg-black/95 backdrop-blur-xl text-white px-4 py-2 rounded-2xl shadow-2xl border border-white/20 font-bold text-xs whitespace-nowrap mb-2">
+              {message}
+              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black border-r border-b border-white/20 rotate-45" />
+            </motion.div>
+          )}
+          {emote && (
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1.5, y: -10 }} exit={{ scale: 0 }} className="text-3xl filter drop-shadow-lg">{emote}</motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
-      {/* Message Bubble */}
-      <AnimatePresence>
-        {message && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: -60 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="absolute z-[1150] bg-white text-black px-4 py-2 rounded-2xl shadow-xl border-2 border-black font-bold text-sm whitespace-nowrap max-w-[200px] truncate"
-          >
-            {message}
-            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-r-2 border-b-2 border-black rotate-45" />
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {/* Speaking Indicator Ring */}
+      {/* Speaking Aura */}
       {isSpeaking && (
-        <motion.div 
-          animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.6, 0.3] }}
-          transition={{ repeat: Infinity, duration: 1 }}
-          className="absolute inset-0 rounded-full ring-4 ring-black/20 ring-offset-2"
-        />
+        <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.1, 0.3, 0.1] }} transition={{ repeat: Infinity, duration: 2 }} className="absolute inset-x-[-10px] inset-y-[-10px] bg-gradient-to-tr from-sky-400 to-indigo-500 rounded-full blur-2xl" />
       )}
-      
-      {/* Shadow */}
-      <div className="absolute bottom-0 w-8 h-2 bg-black/10 rounded-full blur-[2px]" />
 
-      {/* Body Parts Container */}
-      <div className="relative flex flex-col items-center">
-        {/* Hair */}
-        {config.hairStyle !== 'none' && (
-          <div 
-            className="absolute -top-1 z-30 rounded-full"
-            style={{ 
-              backgroundColor: config.hairColor,
-              width: 28,
-              height: config.hairStyle === 'short' ? 14 : config.hairStyle === 'long' ? 24 : 20,
-              top: config.hairStyle === 'pompadour' ? -8 : -2
-            }}
-          />
-        )}
+      {/* Base Layer: Shadow */}
+      <div className="absolute bottom-0 w-10 h-3 bg-black/20 rounded-full blur-[6px]" />
 
-        {/* Head */}
-        <div 
-          className="w-7 h-7 rounded-full z-20 shadow-sm border border-black/5"
-          style={{ backgroundColor: config.skinColor }}
-        >
-          {/* Eyes */}
-          <div className="absolute top-2 left-1.5 w-1 h-1 bg-slate-800 rounded-full" />
-          <div className="absolute top-2 right-1.5 w-1 h-1 bg-slate-800 rounded-full" />
+      {/* Character Assembly */}
+      <div className="relative flex flex-col items-center" style={{ animation: isWalking ? 'v-walk 0.6s infinite ease-in-out' : 'v-breathe 3s infinite ease-in-out' }}>
+        
+        {/* Layer 1: Legs & Shoes */}
+        <div className="flex gap-2.5 z-10 -mb-2">
+          <div className="w-4 h-8 rounded-b-lg shadow-sm relative overflow-hidden" style={{ backgroundColor: config.pantsColor }}>
+            <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
+          </div>
+          <div className="w-4 h-8 rounded-b-lg shadow-sm relative overflow-hidden" style={{ backgroundColor: config.pantsColor }}>
+            <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
+          </div>
         </div>
 
-        {/* Torso / Shirt */}
-        <div 
-          className="z-10 -mt-1 rounded-t-lg shadow-sm border border-black/5 transition-all"
-          style={{ 
-            backgroundColor: config.shirtColor,
-            width: bodyWidth,
-            height: 24
-          }}
-        />
-
-        {/* Legs / Pants */}
-        <div className="flex gap-1 -mt-0.5">
+        {/* Layer 2: Torso & Arms */}
+        <div className="relative z-20">
+          {/* Arms (Left) */}
+          <div className="absolute -left-3 top-2 w-3.5 h-10 rounded-full origin-top shadow-md" style={{ backgroundColor: config.shirtColor, animation: isWalking ? 'v-swing-l 0.6s infinite' : 'none' }}>
+             <div className="absolute bottom-[-2px] w-4 h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
+          </div>
+          {/* Torso */}
           <div 
-            className="w-3 h-4 rounded-b-sm shadow-sm border border-black/5"
-            style={{ backgroundColor: config.pantsColor }}
-          />
-          <div 
-            className="w-3 h-4 rounded-b-sm shadow-sm border border-black/5"
-            style={{ backgroundColor: config.pantsColor }}
-          />
+            className="rounded-[14px] shadow-xl border border-black/5 relative overflow-hidden"
+            style={{ backgroundColor: config.shirtColor, width: bodyMetrics.w, height: 40 }}
+          >
+            {/* Clothing Details */}
+            {config.shirtStyle === 'suit' && (
+              <div className="absolute inset-0">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-10 bg-white" />
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 w-2 h-4 bg-black" />
+                <div className="absolute inset-0 border-t-[12px] border-l-[18px] border-r-[18px] border-slate-900 rounded-t-[14px]" />
+              </div>
+            )}
+            {config.shirtStyle === 'hoodie' && (
+              <div className="absolute top-0 w-full h-4 bg-black/10 rounded-t-[14px]" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+          </div>
+          {/* Arms (Right) */}
+          <div className="absolute -right-3 top-2 w-3.5 h-10 rounded-full origin-top shadow-md" style={{ backgroundColor: config.shirtColor, animation: isWalking ? 'v-swing-r 0.6s infinite' : 'none' }}>
+             <div className="absolute bottom-[-2px] w-4 h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
+          </div>
         </div>
+
+        {/* Layer 3: Head Complex */}
+        <div className="absolute -top-10 z-30">
+          <div className="relative w-12 h-12">
+            {/* Head Base */}
+            <div className="absolute inset-0 rounded-[18px] overflow-hidden bg-white shadow-2xl border-2 border-white/50">
+              {profileImg ? (
+                <img src={profileImg} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200" style={{ backgroundColor: config.skinColor }}>
+                   <div className="flex gap-2">
+                      <div className="w-1.5 h-1.5 bg-black/80 rounded-full" style={{ animation: 'v-blink 4s infinite' }} />
+                      <div className="w-1.5 h-1.5 bg-black/80 rounded-full" style={{ animation: 'v-blink 4s infinite' }} />
+                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Hairstyle Layer (Always on top) */}
+            {config.hairStyle !== 'none' && (
+              <div className="absolute inset-x-[-4px] top-[-8px] bottom-0 z-40 pointer-events-none">
+                 <HairstyleSVG type={config.hairStyle} color={config.hairColor} />
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );
 });
+
+const HairstyleSVG = ({ type, color }: { type: AvatarConfig['hairStyle'], color: string }) => {
+  switch(type) {
+    case 'fade': 
+      return (
+        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+          <path d="M10 40 Q10 10 50 10 Q90 10 90 40 L90 50 L10 50 Z" fill={color} />
+          <rect x="10" y="40" width="80" height="15" fill={color} opacity="0.6" />
+        </svg>
+      );
+    case 'textured':
+      return (
+        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+          <path d="M10 45 Q15 5 50 5 Q85 5 90 45" fill="none" stroke={color} strokeWidth="20" strokeLinecap="round" />
+          <path d="M30 25 Q50 15 70 25" fill="none" stroke="white" opacity="0.1" strokeWidth="2" />
+        </svg>
+      );
+    case 'curly':
+      return (
+        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+          {Array.from({length: 8}).map((_, i) => (
+             <circle key={i} cx={20 + i*8} cy={20 + (i%2)*5} r="12" fill={color} />
+          ))}
+          <path d="M10 40 Q50 10 90 40" fill={color} />
+        </svg>
+      );
+    case 'long':
+      return (
+        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-lg">
+          <path d="M10 40 Q10 0 50 0 Q90 0 90 40 L95 90 Q50 80 5 90 Z" fill={color} />
+          <path d="M20 40 L30 80" stroke="black" opacity="0.1" />
+          <path d="M80 40 L70 80" stroke="black" opacity="0.1" />
+        </svg>
+      );
+    case 'spike':
+       return (
+        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+          <path d="M10 50 L20 10 L35 45 L50 0 L65 45 L80 10 L90 50 Z" fill={color} />
+        </svg>
+       );
+    case 'pompadour':
+      return (
+        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+          <path d="M10 50 Q10 0 50 0 Q90 0 90 50 Q50 30 10 50" fill={color} />
+        </svg>
+      );
+    default: return null;
+  }
+};
 
 interface Task {
   id: string;
@@ -749,20 +846,31 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, onAddTask, o
   );
 });
 
-const UserMenu = React.memo(({ name, playersCount }: { name: string; playersCount: number }) => (
+const UserMenu = React.memo(({ name, playersCount, user, onOpenSettings }: { name: string; playersCount: number; user: any; onOpenSettings: () => void }) => (
   <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
-    <div className="bg-black p-2 rounded-full shadow-lg flex items-center gap-3 pr-5 border border-white/10">
-      <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-black shadow-inner">
-        <User className="w-5 h-5" />
+    <div 
+      onClick={onOpenSettings}
+      className="bg-black/90 backdrop-blur-md p-2 rounded-full shadow-2xl flex items-center gap-3 pr-5 border border-white/10 hover:bg-black transition-all cursor-pointer group"
+    >
+      <div className="w-10 h-10 rounded-full overflow-hidden bg-white flex items-center justify-center text-black shadow-inner border-2 border-white/20">
+        {user?.photoURL ? (
+          <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
+        ) : (
+          <User className="w-5 h-5" />
+        )}
       </div>
       <div>
-        <p className="text-[10px] font-bold text-white/40 uppercase tracking-tighter leading-none mb-1">Workspace Member</p>
-        <p className="text-sm font-bold text-white leading-none">{name}</p>
+        <p className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">Active Now</p>
+        <p className="text-sm font-black text-white leading-none">{name}</p>
       </div>
+      <SettingsIcon className="w-4 h-4 text-white/20 group-hover:text-white group-hover:rotate-90 transition-all ml-1" />
     </div>
-    <div className="bg-black p-3 rounded-full shadow-lg flex items-center gap-2 px-4 border border-white/10">
-      <Users className="w-4 h-4 text-white/40" />
-      <span className="text-xs font-bold text-white">{playersCount}</span>
+    <div className="bg-black/90 backdrop-blur-md p-3 rounded-full shadow-2xl flex items-center gap-2 px-5 border border-white/10">
+      <div className="relative">
+        <Users className="w-4 h-4 text-white/40" />
+        <div className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full border border-black" />
+      </div>
+      <span className="text-xs font-black text-white tracking-widest">{playersCount}</span>
     </div>
   </div>
 ));
@@ -1003,17 +1111,22 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
       skinColor: '#f3c9b1',
       hairStyle: 'short',
       hairColor: '#4a2c2a',
+      shirtStyle: 'hoodie',
       shirtColor: '#000000',
+      pantsStyle: 'jeans',
       pantsColor: '#1e293b',
-      bodyType: 'normal'
+      bodyType: 'normal',
+      useGooglePhoto: !!user?.photoURL
     };
   });
 
-  const skinColors = ['#f3c9b1', '#e0ac69', '#8d5524', '#c68642', '#ffdbac'];
-  const hairColors = ['#4a2c2a', '#2c1e1e', '#d6b37a', '#a5a5a5', '#000000'];
-  const shirtColors = ['#000000', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#ffffff'];
-  const pantsColors = ['#1e293b', '#334155', '#475569', '#1e1b4b', '#000000'];
-  const hairStyles: AvatarConfig['hairStyle'][] = ['none', 'short', 'long', 'pompadour'];
+  const skinColors = ['#f3c9b1', '#e0ac69', '#8d5524', '#c68642', '#ffdbac', '#f1c27d'];
+  const hairColors = ['#4a2c2a', '#2c1e1e', '#d6b37a', '#a5a5a5', '#000000', '#7c3aed', '#3b82f6'];
+  const shirtColors = ['#0f172a', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#f8fafc', '#ef4444', '#f59e0b'];
+  const pantsColors = ['#1e293b', '#334155', '#475569', '#1e1b4b', '#000000', '#2d3748'];
+  const hairStyles: AvatarConfig['hairStyle'][] = ['none', 'bald', 'short', 'long', 'pompadour', 'curly', 'spike', 'fade', 'textured'];
+  const shirtStyles: AvatarConfig['shirtStyle'][] = ['tshirt', 'hoodie', 'suit', 'dress'];
+  const pantsStyles: AvatarConfig['pantsStyle'][] = ['jeans', 'shorts', 'suit-pants'];
   const bodyTypes: AvatarConfig['bodyType'][] = ['slim', 'normal', 'wide'];
 
   const handleComplete = async () => {
@@ -1037,31 +1150,51 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
         className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl flex flex-col md:flex-row overflow-hidden"
       >
         {/* Preview Section */}
-        <div className="md:w-1/2 bg-slate-50 p-12 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-100">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-black text-black tracking-tight">Customize Your Look</h2>
-            <p className="text-slate-500 font-medium">Design your digital presence</p>
+        <div className="md:w-[45%] bg-slate-50 p-12 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-100 relative">
+          <div className="absolute top-8 left-8 right-8 text-center">
+            <h2 className="text-3xl font-black text-black tracking-tight mb-2">Character Builder</h2>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Production Grade Assets</p>
           </div>
           
-          <div className="scale-[2.5] mb-12">
-            <Avatar config={config} isWalking={false} isSpeaking={false} />
+          <div className="scale-[3] mb-24 mt-12">
+            <Avatar config={config} isWalking={false} isSpeaking={false} isLocal />
           </div>
 
-          <button 
-            onClick={() => setConfig({
-              ...config,
-              skinColor: skinColors[Math.floor(Math.random() * skinColors.length)],
-              hairColor: hairColors[Math.floor(Math.random() * hairColors.length)],
-              shirtColor: shirtColors[Math.floor(Math.random() * shirtColors.length)],
-              pantsColor: pantsColors[Math.floor(Math.random() * pantsColors.length)],
-              hairStyle: hairStyles[Math.floor(Math.random() * hairStyles.length)],
-              bodyType: bodyTypes[Math.floor(Math.random() * bodyTypes.length)]
-            })}
-            className="flex items-center gap-2 text-black font-bold hover:text-slate-700 transition-colors"
-          >
-            <Zap className="w-4 h-4" />
-            Randomize
-          </button>
+          <div className="flex flex-col gap-3 w-full max-w-xs">
+            {user?.photoURL && (
+              <button 
+                onClick={() => setConfig({ ...config, useGooglePhoto: !config.useGooglePhoto })}
+                className={`w-full flex items-center justify-center gap-3 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${config.useGooglePhoto ? 'bg-black text-white shadow-2xl' : 'bg-white border border-slate-200 text-slate-500 hover:border-black hover:text-black'}`}
+              >
+                {config.useGooglePhoto ? (
+                  <><CheckCircle2 className="w-4 h-4" />Using Google Profile Photo</>
+                ) : (
+                  <><Globe className="w-4 h-4" />Sync Google Profile</>
+                )}
+              </button>
+            )}
+
+            <button 
+              onClick={() => {
+                const r = (arr: any[]) => arr[Math.floor(Math.random() * arr.length)];
+                setConfig({
+                  ...config,
+                  skinColor: r(skinColors),
+                  hairColor: r(hairColors),
+                  shirtColor: r(shirtColors),
+                  pantsColor: r(pantsColors),
+                  hairStyle: r(hairStyles),
+                  shirtStyle: r(shirtStyles),
+                  pantsStyle: r(pantsStyles),
+                  bodyType: r(bodyTypes)
+                });
+              }}
+              className="w-full flex items-center justify-center gap-2 py-4 text-black/40 font-black text-xs uppercase tracking-widest hover:text-black transition-colors"
+            >
+              <Zap className="w-3 h-3" />
+              Randomize Selection
+            </button>
+          </div>
         </div>
 
         {/* Options Section */}
@@ -1113,9 +1246,25 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
               </div>
             </section>
 
+            {/* Shirt Style */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Outfit Style</h3>
+              <div className="flex flex-wrap gap-2">
+                {shirtStyles.map(style => (
+                  <button 
+                    key={style}
+                    onClick={() => setConfig({ ...config, shirtStyle: style })}
+                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.shirtStyle === style ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </section>
+
             {/* Shirt Color */}
             <section>
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Shirt Color</h3>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Outfit Color</h3>
               <div className="flex flex-wrap gap-3">
                 {shirtColors.map(color => (
                   <button 
@@ -1124,6 +1273,22 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                     className={`w-8 h-8 rounded-full border-4 transition-all ${config.shirtColor === color ? 'border-black scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
                     style={{ backgroundColor: color }}
                   />
+                ))}
+              </div>
+            </section>
+
+            {/* Pants Style */}
+            <section>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Bottoms</h3>
+              <div className="flex flex-wrap gap-2">
+                {pantsStyles.map(style => (
+                  <button 
+                    key={style}
+                    onClick={() => setConfig({ ...config, pantsStyle: style })}
+                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.pantsStyle === style ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                  </button>
                 ))}
               </div>
             </section>
@@ -1248,6 +1413,7 @@ const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, local
         message={player.message}
         emote={player.emote}
         status={player.status}
+        photoURL={(player as any).photoURL}
       />
       <audio ref={audioRef} autoPlay />
     </motion.div>
@@ -1563,7 +1729,8 @@ export default function App() {
         avatarConfig,
         status,
         isPrivate,
-        zone: currentZone
+        zone: currentZone,
+        photoURL: user?.photoURL
       });
     });
 
@@ -1869,7 +2036,7 @@ export default function App() {
     setShowLanding(false);
   };
 
-  if (showLanding && !userName) return <LandingPage onStart={handleStart} />;
+  if (showLanding && !userName) return <LandingPage onStart={handleStart} user={user} onLogout={handleLogout} />;
   if (!userName || !roomId) return <EntryModal onJoin={handleJoin} user={user} />;
   if (!avatarConfig) return <CharacterCustomizationModal onComplete={setAvatarConfig} user={user} userName={userName} />;
 
@@ -1881,6 +2048,7 @@ export default function App() {
         userName={userName} 
         roomId={roomId} 
         onLogout={handleLogout}
+        user={user}
       />
       {/* Connection Overlay */}
       <AnimatePresence>
@@ -1932,7 +2100,12 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)}
         onMinimapClick={handleMinimapClick}
       />
-      <UserMenu name={userName} playersCount={Object.keys(remotePlayers).length + 1} />
+      <UserMenu 
+        name={userName} 
+        playersCount={Object.keys(remotePlayers).length + 1} 
+        user={user}
+        onOpenSettings={() => setShowSettings(true)}
+      />
       
       <div 
         id="office"
