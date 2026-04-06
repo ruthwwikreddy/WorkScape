@@ -394,17 +394,27 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
   };
 
   return (
-    <div className="flex gap-2">
-      {[0, 1].map(leg => (
-        <div
-          key={leg}
-          className="relative shadow-sm"
+    <div className="relative">
+      {/* Connected Legs - Single Piece */}
+      <div 
+        className="relative shadow-sm"
+        style={{
+          width: proportions.legWidth * 2 + 4, // Total width including gap
+          height: getPantsStyle().height,
+          backgroundColor: config.pantsColor,
+          borderRadius: getPantsStyle().borderRadius,
+          border: '1px solid rgba(0,0,0,0.1)'
+        }}
+      >
+        {/* Left Leg */}
+        <div 
+          className="absolute left-0 top-0"
           style={{
             width: proportions.legWidth,
             height: getPantsStyle().height,
             backgroundColor: config.pantsColor,
-            borderRadius: getPantsStyle().borderRadius,
-            border: '1px solid rgba(0,0,0,0.1)'
+            borderRadius: '8px 0 0 8px', // Only round bottom corners
+            clipPath: 'inset(0 0 0 0 round 8px 0 0)' // Cut from top
           }}
         >
           {/* Shoe */}
@@ -412,14 +422,37 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
             className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-2 bg-slate-900 rounded-sm"
             style={{ width: proportions.legWidth * 1.2 }}
           />
-          {/* Texture for jeans */}
-          {config.pantsStyle === 'jeans' && (
-            <div className="absolute inset-0 opacity-20">
-              <div className="h-full w-full bg-gradient-to-b from-transparent to-blue-900/30" />
-            </div>
-          )}
         </div>
-      ))}
+
+        {/* Right Leg */}
+        <div 
+          className="absolute right-0 top-0"
+          style={{
+            width: proportions.legWidth,
+            height: getPantsStyle().height,
+            backgroundColor: config.pantsColor,
+            borderRadius: '0 8px 8px 0 8px', // Only round bottom corners
+            clipPath: 'inset(0 0 0 0 round 0 8px 8px)' // Cut from top
+          }}
+        >
+          {/* Shoe */}
+          <div 
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-2 bg-slate-900 rounded-sm"
+            style={{ width: proportions.legWidth * 1.2 }}
+          />
+        </div>
+
+        {/* Connection between legs */}
+        <div 
+          className="absolute top-0 left-1/2 -translate-x-1/2"
+          style={{
+            width: 4, // Gap between legs
+            height: getPantsStyle().height,
+            backgroundColor: config.pantsColor,
+            borderRadius: '4px' // Small rounded connection
+          }}
+        />
+      </div>
     </div>
   );
 };
@@ -451,31 +484,9 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
 
   return (
     <div className="relative">
-      {/* Arms */}
-      <div className="absolute -left-3 top-2 flex flex-col items-center">
-        <div
-          className="rounded-full origin-top shadow-md"
-          style={{
-            width: proportions.armWidth,
-            height: proportions.armHeight,
-            backgroundColor: config.shirtColor,
-            animation: 'v-swing-l 0.5s infinite',
-            transformOrigin: 'top center'
-          }}
-        >
-          <div 
-            className="absolute bottom-0 w-[120%] h-3 rounded-full"
-            style={{ 
-              backgroundColor: config.skinColor,
-              width: proportions.armWidth * 1.2
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Main Torso */}
-      <div
-        className={`relative shadow-lg overflow-hidden ${details.extraClass}`}
+      {/* Main Torso Body - Connected to Arms */}
+      <div 
+        className="relative shadow-lg overflow-hidden"
         style={{
           width: proportions.torsoWidth,
           height: proportions.torsoHeight,
@@ -505,7 +516,30 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
         <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
       </div>
 
-      {/* Right Arm */}
+      {/* Arms - Connected to Torso */}
+      <div className="absolute -left-3 top-2 flex flex-col items-center">
+        <div
+          className="rounded-full origin-top shadow-md"
+          style={{
+            width: proportions.armWidth,
+            height: proportions.armHeight,
+            backgroundColor: config.shirtColor,
+            animation: 'v-swing-l 0.5s infinite',
+            transformOrigin: 'top center'
+          }}
+        >
+          {/* Hand - Connected to Torso */}
+          <div 
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full"
+            style={{ 
+              backgroundColor: config.skinColor,
+              width: proportions.armWidth * 1.2
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Right Arm - Connected to Torso */}
       <div className="absolute -right-3 top-2 flex flex-col items-center">
         <div
           className="rounded-full origin-top shadow-md"
@@ -517,8 +551,9 @@ const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportion
             transformOrigin: 'top center'
           }}
         >
+          {/* Hand - Connected to Torso */}
           <div 
-            className="absolute bottom-0 w-[120%] h-3 rounded-full"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-3 rounded-full"
             style={{ 
               backgroundColor: config.skinColor,
               width: proportions.armWidth * 1.2
