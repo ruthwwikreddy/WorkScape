@@ -1947,7 +1947,26 @@ export default function App() {
   const socketRef = useRef<Socket | null>(null);
   const [showEmotePicker, setShowEmotePicker] = useState(false);
 
-  // Firebase Auth
+  // Test Firebase permissions
+  useEffect(() => {
+    const testFirebaseWrite = async () => {
+      if (user && avatarConfig) {
+        try {
+          await setDoc(doc(db, 'test', 'permission-test'), {
+            test: 'Firebase write test',
+            timestamp: new Date().toISOString()
+          });
+          console.log('✅ Firebase write permission OK');
+        } catch (error) {
+          console.error('❌ Firebase write permission ERROR:', error);
+        }
+      }
+    };
+
+    // Run test after 3 seconds
+    const timer = setTimeout(testFirebaseWrite, 3000);
+    return () => clearTimeout(timer);
+  }, [user, avatarConfig]);
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
