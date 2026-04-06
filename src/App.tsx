@@ -383,7 +383,7 @@ const SettingsModal = ({
   );
 };
 
-// Avatar Sub-components - Production Grade
+// Avatar Sub-components - PREMIUM GRADE
 const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
   const getPantsStyle = () => {
     switch(config.pantsStyle) {
@@ -397,7 +397,7 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
     <div className="relative">
       {/* Connected Legs - Single Piece */}
       <div 
-        className="relative shadow-sm"
+        className="relative shadow-lg"
         style={{
           width: proportions.legWidth * 2 + 4, // Total width including gap
           height: getPantsStyle().height,
@@ -419,7 +419,7 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
         >
           {/* Shoe */}
           <div 
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-2 bg-slate-900 rounded-sm"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-2 bg-slate-900 rounded-sm shadow-md"
             style={{ width: proportions.legWidth * 1.2 }}
           />
         </div>
@@ -437,7 +437,7 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
         >
           {/* Shoe */}
           <div 
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-2 bg-slate-900 rounded-sm"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-2 bg-slate-900 rounded-sm shadow-md"
             style={{ width: proportions.legWidth * 1.2 }}
           />
         </div>
@@ -449,9 +449,23 @@ const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions
             width: 4, // Gap between legs
             height: getPantsStyle().height,
             backgroundColor: config.pantsColor,
-            borderRadius: '4px' // Small rounded connection
+            borderRadius: '4px', // Small rounded connection
+            boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.1)' // Inner shadow for depth
           }}
         />
+
+        {/* Texture overlay for jeans */}
+        {config.pantsStyle === 'jeans' && (
+          <div className="absolute inset-0 opacity-30">
+            <div className="h-full w-full">
+              {/* Denim texture pattern */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-blue-800/10 to-transparent" />
+              {/* Stitching details */}
+              <div className="absolute left-1/2 top-2 w-px h-full bg-blue-900/40" />
+              <div className="absolute right-1/2 top-2 w-px h-full bg-blue-900/40" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -612,58 +626,93 @@ const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: {
   );
 };
 
-const AvatarHair = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
+  const AvatarHair = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
   const getHairStyle = () => {
     switch(config.hairStyle) {
       case 'short':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
             <path d="M20 40 Q20 20 50 20 Q80 20 80 40 L80 50 Q60 45 50 50 Q40 45 20 50 Z" fill={config.hairColor} />
             <path d="M25 35 Q50 25 75 35" stroke="rgba(0,0,0,0.1)" strokeWidth="2" fill="none" />
+            {/* Shadow for depth */}
+            <ellipse cx="50" cy="70" rx="25" ry="8" fill="rgba(0,0,0,0.1)" />
           </svg>
         );
       case 'fade':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.6 }}>
-            <path d="M15 35 Q15 15 50 15 Q85 15 85 35 L85 45 L15 45 Z" fill={config.hairColor} />
+          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.6 }}>
+            <path d="M15 35 Q15 15 50 15 Q85 15 90 35 L85 45 L15 45 Z" fill={config.hairColor} />
             <rect x="15" y="35" width="70" height="10" fill={config.hairColor} opacity="0.7" />
+            {/* Soft gradient overlay */}
+            <defs>
+              <linearGradient id="fadeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor={config.hairColor} stopOpacity="0.9" />
+                <stop offset="100%" stopColor={config.hairColor} stopOpacity="0.1" />
+              </linearGradient>
+            </defs>
+            <rect x="15" y="35" width="70" height="10" fill="url(#fadeGradient)" />
           </svg>
         );
       case 'curly':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.3, height: proportions.headSize * 0.9 }}>
-            {Array.from({length: 8}).map((_, i) => (
-              <circle key={i} cx={15 + i*10} cy={20 + (i%2)*5} r="8" fill={config.hairColor} />
+          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.3, height: proportions.headSize * 0.9 }}>
+            {/* Multiple curly strands */}
+            {Array.from({length: 12}).map((_, i) => (
+              <circle key={i} cx={20 + (i%4)*15} cy={25 + (i%2)*10} r="6" fill={config.hairColor} opacity="0.8" />
             ))}
-            <path d="M10 35 Q50 15 90 35" fill={config.hairColor} />
+            <path d="M10 40 Q50 10 90 40" fill={config.hairColor} />
+            {/* Shadow effect */}
+            <ellipse cx="50" cy="60" rx="30" ry="12" fill="rgba(0,0,0,0.05)" />
           </svg>
         );
       case 'long':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 1.4 }}>
-            <path d="M10 35 Q10 5 50 5 Q90 5 90 35 L95 85 Q50 75 5 85 Z" fill={config.hairColor} />
-            <path d="M20 35 L25 75" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
-            <path d="M80 35 L75 75" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
+          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 1.4 }}>
+            <path d="M10 40 Q10 0 50 0 Q90 0 90 40 L95 90 Q50 80 5 90 Z" fill={config.hairColor} />
+            <path d="M20 40 L30 80" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
+            <path d="M80 40 L70 80" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
+            {/* Hair strands */}
+            {Array.from({length: 16}).map((_, i) => (
+              <path key={i} d={`M${15 + i*5} 35 Q${25 + i*5} 50 ${15 + i*5} 35`} stroke={config.hairColor} strokeWidth="1.5" fill="none" />
+            ))}
+            {/* Shadow for depth */}
+            <ellipse cx="50" cy="70" rx="35" ry="10" fill="rgba(0,0,0,0.08)" />
           </svg>
         );
       case 'pompadour':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.7 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.7 }}>
             <path d="M10 35 Q10 5 50 5 Q90 5 90 35 Q50 25 10 35" fill={config.hairColor} />
             <path d="M30 25 Q50 15 70 25" stroke="rgba(0,0,0,0.1)" strokeWidth="2" fill="none" />
+            {/* Volume effect */}
+            <ellipse cx="50" cy="50" rx="25" ry="15" fill={config.hairColor} opacity="0.3" />
           </svg>
         );
       case 'spike':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
             <path d="M10 35 L20 10 L30 30 L50 0 L70 30 L80 10 L90 35 Z" fill={config.hairColor} />
+            {/* Sharp edges */}
+            <path d="M20 35 L20 10 M30 30" stroke="rgba(0,0,0,0.2)" strokeWidth="1" fill="none" />
+            <path d="M50 0 L70 30 M80 10" stroke="rgba(0,0,0,0.2)" strokeWidth="1" fill="none" />
+            {/* Shadow */}
+            <ellipse cx="50" cy="60" rx="20" ry="8" fill="rgba(0,0,0,0.1)" />
           </svg>
         );
       case 'textured':
         return (
-          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+          <svg viewBox="0 0 100 100" className="drop-shadow-lg" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+            <defs>
+              <pattern id="texturePattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                <rect width="20" height="20" fill={config.hairColor} opacity="0.3" />
+                <rect width="20" height="20" fill="none" stroke={config.hairColor} strokeWidth="0.5" />
+              </pattern>
+            </defs>
             <path d="M10 35 Q15 10 50 10 Q85 10 90 35" fill="none" stroke={config.hairColor} strokeWidth="15" strokeLinecap="round" />
             <path d="M30 20 Q50 15 70 20" stroke="rgba(255,255,255,0.2)" strokeWidth="2" fill="none" />
+            <rect x="15" y="25" width="70" height="40" fill="url(#texturePattern)" />
+            {/* Shadow */}
+            <ellipse cx="50" cy="65" rx="30" ry="12" fill="rgba(0,0,0,0.1)" />
           </svg>
         );
       default:
@@ -747,20 +796,20 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
   const profileImg = photoURL || (isLocal ? auth.currentUser?.photoURL : null);
   const useProfilePic = profileImg && config.useGooglePhoto;
 
-  // Production-grade human proportions
+  // Production-grade human proportions - ENHANCED FOR PERFECTION
   const proportions = useMemo(() => {
     const baseScale = config.bodyType === 'slim' ? 0.85 : config.bodyType === 'wide' ? 1.15 : 1;
     return {
       totalHeight: 80,
-      headSize: Math.round(14 * baseScale),
-      neckHeight: 2,
-      torsoHeight: Math.round(32 * baseScale),
-      torsoWidth: Math.round(28 * baseScale),
-      armWidth: Math.round(6 * baseScale),
-      armHeight: Math.round(20 * baseScale),
-      legWidth: Math.round(8 * baseScale),
-      legHeight: Math.round(32 * baseScale),
-      shoulderWidth: Math.round(32 * baseScale)
+      headSize: Math.round(16 * baseScale), // Slightly larger head for better visibility
+      neckHeight: 3, // More defined neck separation
+      torsoHeight: Math.round(30 * baseScale), // Balanced torso
+      torsoWidth: Math.round(26 * baseScale), // Natural shoulder width
+      armWidth: Math.round(7 * baseScale), // Proportional arms
+      armHeight: Math.round(22 * baseScale), // Longer arms for better reach
+      legWidth: Math.round(9 * baseScale), // Stable leg width
+      legHeight: Math.round(30 * baseScale), // Longer legs for better proportions
+      shoulderWidth: Math.round(30 * baseScale) // Defined shoulder width
     };
   }, [config.bodyType]);
 
