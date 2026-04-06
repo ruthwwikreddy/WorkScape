@@ -1537,8 +1537,21 @@ export default function App() {
     if (!userName || !avatarConfig || !roomId) return;
 
     console.log("Connecting to socket...", { userName, roomId });
-    socketRef.current = io();
+    socketRef.current = io({
+      transports: ['polling', 'websocket'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
     const socket = socketRef.current;
+
+    socket.on("connect_error", (err) => {
+      console.error("Socket connection error:", err.message);
+      console.error("Socket error details:", err);
+    });
+
+    socket.on("reconnect_attempt", (attempt) => {
+      console.log(`Socket reconnect attempt #${attempt}`);
+    });
 
     initVoice().then(() => {
       console.log("Voice initialized, joining room...");

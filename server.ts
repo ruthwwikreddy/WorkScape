@@ -20,6 +20,21 @@ async function startServer() {
 
   const PORT = 3000;
 
+  // Logging middleware to track requests
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+  });
+
+  // API Health Check
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      time: new Date().toISOString(),
+      socketConnected: io.engine.clientsCount
+    });
+  });
+
   // Track users by room
   const rooms: Record<string, Record<string, any>> = {};
 
@@ -160,7 +175,8 @@ async function startServer() {
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`>>> Server is listening on 0.0.0.0:${PORT}`);
+    console.log(`>>> Socket.IO is initialized and attached to httpServer`);
   });
 }
 
