@@ -381,6 +381,267 @@ const SettingsModal = ({
   );
 };
 
+// Avatar Sub-components - Production Grade
+const AvatarLegs = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
+  const getPantsStyle = () => {
+    switch(config.pantsStyle) {
+      case 'shorts': return { height: proportions.legHeight * 0.6, borderRadius: '8px 8px 0 0' };
+      case 'suit-pants': return { height: proportions.legHeight, borderRadius: '4px' };
+      default: return { height: proportions.legHeight, borderRadius: '0 0 8px 8px' };
+    }
+  };
+
+  return (
+    <div className="flex gap-2">
+      {[0, 1].map(leg => (
+        <div
+          key={leg}
+          className="relative shadow-sm"
+          style={{
+            width: proportions.legWidth,
+            height: getPantsStyle().height,
+            backgroundColor: config.pantsColor,
+            borderRadius: getPantsStyle().borderRadius,
+            border: '1px solid rgba(0,0,0,0.1)'
+          }}
+        >
+          {/* Shoe */}
+          <div 
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[120%] h-2 bg-slate-900 rounded-sm"
+            style={{ width: proportions.legWidth * 1.2 }}
+          />
+          {/* Texture for jeans */}
+          {config.pantsStyle === 'jeans' && (
+            <div className="absolute inset-0 opacity-20">
+              <div className="h-full w-full bg-gradient-to-b from-transparent to-blue-900/30" />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const AvatarTorso = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
+  const getShirtDetails = () => {
+    switch(config.shirtStyle) {
+      case 'suit': return {
+        hasCollar: true,
+        hasButtons: true,
+        extraClass: 'border-2 border-slate-800'
+      };
+      case 'hoodie': return {
+        hasHood: true,
+        extraClass: 'border-b-2 border-slate-700'
+      };
+      case 'dress': return {
+        hasSkirt: true,
+        extraClass: 'rounded-b-lg'
+      };
+      default: return {
+        hasSleeves: true,
+        extraClass: ''
+      };
+    }
+  };
+
+  const details = getShirtDetails();
+
+  return (
+    <div className="relative">
+      {/* Arms */}
+      <div className="absolute -left-3 top-2 flex flex-col items-center">
+        <div
+          className="rounded-full origin-top shadow-md"
+          style={{
+            width: proportions.armWidth,
+            height: proportions.armHeight,
+            backgroundColor: config.shirtColor,
+            animation: 'v-swing-l 0.5s infinite',
+            transformOrigin: 'top center'
+          }}
+        >
+          <div 
+            className="absolute bottom-0 w-[120%] h-3 rounded-full"
+            style={{ 
+              backgroundColor: config.skinColor,
+              width: proportions.armWidth * 1.2
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Main Torso */}
+      <div
+        className={`relative shadow-lg overflow-hidden ${details.extraClass}`}
+        style={{
+          width: proportions.torsoWidth,
+          height: proportions.torsoHeight,
+          backgroundColor: config.shirtColor,
+          borderRadius: config.shirtStyle === 'dress' ? '12px 12px 0 0' : '8px 8px 4px 4px'
+        }}
+      >
+        {/* Shirt Details */}
+        {details.hasCollar && (
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-6 bg-white border border-slate-800 rounded-t" />
+        )}
+        {details.hasButtons && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col gap-1">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="w-1 h-1 bg-slate-800 rounded-full" />
+            ))}
+          </div>
+        )}
+        {details.hasHood && (
+          <div className="absolute top-0 w-full h-4 bg-black/10 rounded-t" />
+        )}
+        {details.hasSkirt && (
+          <div className="absolute bottom-0 w-full h-4 bg-gradient-to-b from-transparent to-black/10 rounded-b" />
+        )}
+
+        {/* Subtle gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+      </div>
+
+      {/* Right Arm */}
+      <div className="absolute -right-3 top-2 flex flex-col items-center">
+        <div
+          className="rounded-full origin-top shadow-md"
+          style={{
+            width: proportions.armWidth,
+            height: proportions.armHeight,
+            backgroundColor: config.shirtColor,
+            animation: 'v-swing-r 0.5s infinite',
+            transformOrigin: 'top center'
+          }}
+        >
+          <div 
+            className="absolute bottom-0 w-[120%] h-3 rounded-full"
+            style={{ 
+              backgroundColor: config.skinColor,
+              width: proportions.armWidth * 1.2
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AvatarHead = ({ config, proportions, profileImg, useProfilePic }: { 
+  config: AvatarConfig; 
+  proportions: any; 
+  profileImg?: string; 
+  useProfilePic: boolean; 
+}) => {
+  return (
+    <div className="relative">
+      <div
+        className="relative overflow-hidden shadow-2xl border-2 border-white/30"
+        style={{
+          width: proportions.headSize,
+          height: proportions.headSize,
+          borderRadius: '50%',
+          backgroundColor: useProfilePic ? 'transparent' : config.skinColor
+        }}
+      >
+        {useProfilePic && profileImg ? (
+          <img
+            src={profileImg}
+            alt="Profile"
+            className="w-full h-full object-cover"
+            style={{
+              objectPosition: 'center',
+              objectFit: 'cover'
+            }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            {/* Eyes */}
+            <div className="flex gap-2">
+              <div 
+                className="w-2 h-2 bg-black/80 rounded-full" 
+                style={{ animation: 'v-blink 4s infinite' }} 
+              />
+              <div 
+                className="w-2 h-2 bg-black/80 rounded-full" 
+                style={{ animation: 'v-blink 4s infinite 0.1s' }} 
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const AvatarHair = ({ config, proportions }: { config: AvatarConfig; proportions: any }) => {
+  const getHairStyle = () => {
+    switch(config.hairStyle) {
+      case 'short':
+        return (
+          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+            <path d="M20 40 Q20 20 50 20 Q80 20 80 40 L80 50 Q60 45 50 50 Q40 45 20 50 Z" fill={config.hairColor} />
+            <path d="M25 35 Q50 25 75 35" stroke="rgba(0,0,0,0.1)" strokeWidth="2" fill="none" />
+          </svg>
+        );
+      case 'fade':
+        return (
+          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.6 }}>
+            <path d="M15 35 Q15 15 50 15 Q85 15 85 35 L85 45 L15 45 Z" fill={config.hairColor} />
+            <rect x="15" y="35" width="70" height="10" fill={config.hairColor} opacity="0.7" />
+          </svg>
+        );
+      case 'curly':
+        return (
+          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.3, height: proportions.headSize * 0.9 }}>
+            {Array.from({length: 8}).map((_, i) => (
+              <circle key={i} cx={15 + i*10} cy={20 + (i%2)*5} r="8" fill={config.hairColor} />
+            ))}
+            <path d="M10 35 Q50 15 90 35" fill={config.hairColor} />
+          </svg>
+        );
+      case 'long':
+        return (
+          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 1.4 }}>
+            <path d="M10 35 Q10 5 50 5 Q90 5 90 35 L95 85 Q50 75 5 85 Z" fill={config.hairColor} />
+            <path d="M20 35 L25 75" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
+            <path d="M80 35 L75 75" stroke="rgba(0,0,0,0.1)" strokeWidth="2" />
+          </svg>
+        );
+      case 'pompadour':
+        return (
+          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.7 }}>
+            <path d="M10 35 Q10 5 50 5 Q90 5 90 35 Q50 25 10 35" fill={config.hairColor} />
+            <path d="M30 25 Q50 15 70 25" stroke="rgba(0,0,0,0.1)" strokeWidth="2" fill="none" />
+          </svg>
+        );
+      case 'spike':
+        return (
+          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+            <path d="M10 35 L20 10 L30 30 L50 0 L70 30 L80 10 L90 35 Z" fill={config.hairColor} />
+          </svg>
+        );
+      case 'textured':
+        return (
+          <svg viewBox="0 0 100 100" className="drop-shadow-md" style={{ width: proportions.headSize * 1.2, height: proportions.headSize * 0.8 }}>
+            <path d="M10 35 Q15 10 50 10 Q85 10 90 35" fill="none" stroke={config.hairColor} strokeWidth="15" strokeLinecap="round" />
+            <path d="M30 20 Q50 15 70 20" stroke="rgba(255,255,255,0.2)" strokeWidth="2" fill="none" />
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="absolute" style={{ top: -2, left: '50%', transform: 'translateX(-50%)' }}>
+      {getHairStyle()}
+    </div>
+  );
+};
+
+// Production-grade Avatar Component
 const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal, photoURL }: { 
   config: AvatarConfig; 
   isWalking: boolean; 
@@ -394,70 +655,51 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
   const profileImg = photoURL || (isLocal ? auth.currentUser?.photoURL : null);
   const useProfilePic = profileImg && config.useGooglePhoto;
 
-  // Fixed human-proportional metrics
-  const bodyMetrics = useMemo(() => {
-    switch(config.bodyType) {
-      case 'slim': return { 
-        bodyWidth: 32, 
-        bodyHeight: 28, 
-        headSize: 24,
-        legWidth: 6,
-        legHeight: 16,
-        armWidth: 4,
-        armHeight: 12
-      };
-      case 'wide': return { 
-        bodyWidth: 48, 
-        bodyHeight: 36, 
-        headSize: 28,
-        legWidth: 8,
-        legHeight: 18,
-        armWidth: 6,
-        armHeight: 14
-      };
-      default: return { 
-        bodyWidth: 40, 
-        bodyHeight: 32, 
-        headSize: 26,
-        legWidth: 7,
-        legHeight: 17,
-        armWidth: 5,
-        armHeight: 13
-      };
-    }
+  // Production-grade human proportions
+  const proportions = useMemo(() => {
+    const baseScale = config.bodyType === 'slim' ? 0.85 : config.bodyType === 'wide' ? 1.15 : 1;
+    return {
+      totalHeight: 80,
+      headSize: Math.round(14 * baseScale),
+      neckHeight: 2,
+      torsoHeight: Math.round(32 * baseScale),
+      torsoWidth: Math.round(28 * baseScale),
+      armWidth: Math.round(6 * baseScale),
+      armHeight: Math.round(20 * baseScale),
+      legWidth: Math.round(8 * baseScale),
+      legHeight: Math.round(32 * baseScale),
+      shoulderWidth: Math.round(32 * baseScale)
+    };
   }, [config.bodyType]);
 
-  const totalHeight = bodyMetrics.headSize + bodyMetrics.bodyHeight + bodyMetrics.legHeight;
-  const containerSize = 80; // Fixed container for consistent scaling
-
   return (
-    <div className="relative flex items-center justify-center" style={{ 
-      width: containerSize, 
-      height: containerSize,
-      transform: 'scale(0.8)' // Slightly smaller for better fit
+    <div className="relative" style={{ 
+      width: proportions.totalHeight, 
+      height: proportions.totalHeight,
+      transform: 'scale(0.9)' // Slightly smaller for better fit
     }}>
       <style>{`
         @keyframes v-walk {
-          0%, 100% { transform: translateY(0) rotate(0); }
-          25% { transform: translateY(-5px) rotate(-4deg); }
-          50% { transform: translateY(0) rotate(0); }
-          75% { transform: translateY(-5px) rotate(4deg); }
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          25% { transform: translateY(-2px) rotate(-1deg); }
+          50% { transform: translateY(0) rotate(0deg); }
+          75% { transform: translateY(-2px) rotate(1deg); }
         }
         @keyframes v-breathe {
           0%, 100% { transform: scale(1); }
-          50% { transform: scale(0.98, 1.02) translateY(1px); }
+          50% { transform: scale(1.02); }
         }
         @keyframes v-blink {
           0%, 90%, 100% { transform: scaleY(1); }
-          95% { transform: scaleY(0); }
+          95% { transform: scaleY(0.1); }
         }
         @keyframes v-swing-l {
-          0%, 100% { transform: rotate(-8deg); }
-          50% { transform: rotate(15deg); }
+          0%, 100% { transform: rotate(-3deg); }
+          50% { transform: rotate(2deg); }
         }
         @keyframes v-swing-r {
-          0%, 100% { transform: rotate(8deg); }
-          50% { transform: rotate(-15deg); }
+          0%, 100% { transform: rotate(3deg); }
+          50% { transform: rotate(-2deg); }
         }
       `}</style>
 
@@ -478,236 +720,45 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
 
       {/* Speaking Aura */}
       {isSpeaking && (
-        <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.1, 0.3, 0.1] }} transition={{ repeat: Infinity, duration: 2 }} className="absolute inset-x-[-10px] inset-y-[-10px] bg-gradient-to-tr from-sky-400 to-indigo-500 rounded-full blur-2xl" />
+        <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }} transition={{ repeat: Infinity, duration: 2 }} className="absolute inset-x-[-8px] inset-y-[-8px] bg-gradient-to-tr from-sky-400 to-indigo-500 rounded-full blur-xl" />
       )}
 
-      {/* Base Layer: Shadow */}
-      <div className="absolute bottom-0 w-10 h-3 bg-black/20 rounded-full blur-[6px]" />
+      {/* Ground Shadow */}
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-2 bg-black/10 rounded-full blur-md" />
 
-      {/* Character Assembly - Proper Layering Order */}
+      {/* Avatar Container - Single Unit */}
       <div 
-        className="relative flex flex-col items-center" 
+        className="relative flex flex-col items-center"
         style={{ 
-          animation: isWalking ? 'v-walk 0.6s infinite ease-in-out' : 'v-breathe 3s infinite ease-in-out',
+          animation: isWalking ? 'v-walk 0.5s infinite ease-in-out' : 'v-breathe 3s infinite ease-in-out',
           transformOrigin: 'center bottom'
         }}
       >
-        {/* Layer 1: Shadow */}
-        <div className="absolute bottom-0 w-12 h-3 bg-black/20 rounded-full blur-[4px] z-0" />
-        
-        {/* Layer 2: Legs */}
-        <div className="relative z-10 mb-0">
-          <div className="flex gap-2 justify-center">
-            <div 
-              className="rounded-b-lg shadow-sm relative overflow-hidden" 
-              style={{ 
-                width: bodyMetrics.legWidth, 
-                height: bodyMetrics.legHeight, 
-                backgroundColor: config.pantsColor 
-              }}
-            >
-              <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
-            </div>
-            <div 
-              className="rounded-b-lg shadow-sm relative overflow-hidden" 
-              style={{ 
-                width: bodyMetrics.legWidth, 
-                height: bodyMetrics.legHeight, 
-                backgroundColor: config.pantsColor 
-              }}
-            >
-              <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
-            </div>
-          </div>
+        {/* Legs Layer */}
+        <div className="relative z-10">
+          <AvatarLegs config={config} proportions={proportions} />
         </div>
 
-        {/* Layer 3: Torso & Arms */}
+        {/* Torso Layer */}
         <div className="relative z-20 -mt-1">
-          {/* Arms (Behind) */}
-          <div 
-            className="absolute rounded-full origin-top shadow-md" 
-            style={{ 
-              backgroundColor: config.shirtColor, 
-              width: bodyMetrics.armWidth, 
-              height: bodyMetrics.armHeight,
-              left: -bodyMetrics.armWidth - 2,
-              top: 4,
-              animation: isWalking ? 'v-swing-l 0.6s infinite' : 'none',
-              transformOrigin: 'top center'
-            }}
-          >
-            <div 
-              className="absolute rounded-full" 
-              style={{ 
-                backgroundColor: config.skinColor,
-                width: bodyMetrics.armWidth + 2,
-                height: bodyMetrics.armWidth + 2,
-                bottom: -2,
-                left: -1
-              }} 
-            />
-          </div>
-          
-          {/* Torso */}
-          <div 
-            className="rounded-lg shadow-xl border border-black/5 relative overflow-hidden"
-            style={{ 
-              backgroundColor: config.shirtColor, 
-              width: bodyMetrics.bodyWidth, 
-              height: bodyMetrics.bodyHeight 
-            }}
-          >
-            {/* Clothing Details */}
-            {config.shirtStyle === 'suit' && (
-              <div className="absolute inset-0">
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-8 bg-white" />
-                <div className="absolute top-1 left-1/2 -translate-x-1/2 w-2 h-3 bg-black" />
-                <div className="absolute inset-0 border-t-[8px] border-l-[12px] border-r-[12px] border-slate-900 rounded-t-lg" />
-              </div>
-            )}
-            {config.shirtStyle === 'hoodie' && (
-              <div className="absolute top-0 w-full h-3 bg-black/10 rounded-t-lg" />
-            )}
-            {config.shirtStyle === 'dress' && (
-              <div className="absolute bottom-0 w-full h-2 bg-white/20 rounded-b-lg" />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-          </div>
-          
-          {/* Arms (Front) */}
-          <div 
-            className="absolute rounded-full origin-top shadow-md" 
-            style={{ 
-              backgroundColor: config.shirtColor, 
-              width: bodyMetrics.armWidth, 
-              height: bodyMetrics.armHeight,
-              right: -bodyMetrics.armWidth - 2,
-              top: 4,
-              animation: isWalking ? 'v-swing-r 0.6s infinite' : 'none',
-              transformOrigin: 'top center'
-            }}
-          >
-            <div 
-              className="absolute rounded-full" 
-              style={{ 
-                backgroundColor: config.skinColor,
-                width: bodyMetrics.armWidth + 2,
-                height: bodyMetrics.armWidth + 2,
-                bottom: -2,
-                left: -1
-              }} 
-            />
-          </div>
+          <AvatarTorso config={config} proportions={proportions} />
         </div>
 
-        {/* Layer 4: Head */}
-        <div className="relative z-30 -mt-2">
-          <div 
-            className="relative rounded-full overflow-hidden shadow-2xl border-2 border-white/30"
-            style={{ 
-              width: bodyMetrics.headSize, 
-              height: bodyMetrics.headSize 
-            }}
-          >
-            {useProfilePic ? (
-              <img 
-                src={profileImg} 
-                alt="Profile" 
-                className="w-full h-full object-cover"
-                style={{ 
-                  objectPosition: 'center',
-                  objectFit: 'cover'
-                }}
-              />
-            ) : (
-              <div 
-                className="w-full h-full flex items-center justify-center"
-                style={{ backgroundColor: config.skinColor }}
-              >
-                <div className="flex gap-2">
-                  <div 
-                    className="w-1.5 h-1.5 bg-black/80 rounded-full" 
-                    style={{ animation: 'v-blink 4s infinite' }} 
-                  />
-                  <div 
-                    className="w-1.5 h-1.5 bg-black/80 rounded-full" 
-                    style={{ animation: 'v-blink 4s infinite' }} 
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Layer 5: Hair (Always on top) */}
-          {config.hairStyle !== 'none' && (
-            <div 
-              className="absolute inset-x-[-6px] top-[-10px] bottom-0 z-40 pointer-events-none"
-              style={{ 
-                width: bodyMetrics.headSize + 12,
-                height: bodyMetrics.headSize + 10
-              }}
-            >
-              <HairstyleSVG 
-                type={config.hairStyle} 
-                color={config.hairColor} 
-                headSize={bodyMetrics.headSize}
-              />
-            </div>
-          )}
+        {/* Head Layer */}
+        <div className="relative z-30 -mt-1">
+          <AvatarHead config={config} proportions={proportions} profileImg={profileImg} useProfilePic={useProfilePic} />
         </div>
+
+        {/* Hair Layer */}
+        {config.hairStyle !== 'none' && (
+          <div className="absolute z-40" style={{ top: -proportions.headSize + 2, left: '50%', transform: 'translateX(-50%)' }}>
+            <AvatarHair config={config} proportions={proportions} />
+          </div>
+        )}
       </div>
     </div>
   );
 });
-
-const HairstyleSVG = ({ type, color, headSize }: { type: AvatarConfig['hairStyle'], color: string, headSize?: number }) => {
-  switch(type) {
-    case 'fade': 
-      return (
-        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-          <path d="M10 40 Q10 10 50 10 Q90 10 90 40 L90 50 L10 50 Z" fill={color} />
-          <rect x="10" y="40" width="80" height="15" fill={color} opacity="0.6" />
-        </svg>
-      );
-    case 'textured':
-      return (
-        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-          <path d="M10 45 Q15 5 50 5 Q85 5 90 45" fill="none" stroke={color} strokeWidth="20" strokeLinecap="round" />
-          <path d="M30 25 Q50 15 70 25" fill="none" stroke="white" opacity="0.1" strokeWidth="2" />
-        </svg>
-      );
-    case 'curly':
-      return (
-        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-          {Array.from({length: 8}).map((_, i) => (
-             <circle key={i} cx={20 + i*8} cy={20 + (i%2)*5} r="12" fill={color} />
-          ))}
-          <path d="M10 40 Q50 10 90 40" fill={color} />
-        </svg>
-      );
-    case 'long':
-      return (
-        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-lg">
-          <path d="M10 40 Q10 0 50 0 Q90 0 90 40 L95 90 Q50 80 5 90 Z" fill={color} />
-          <path d="M20 40 L30 80" stroke="black" opacity="0.1" />
-          <path d="M80 40 L70 80" stroke="black" opacity="0.1" />
-        </svg>
-      );
-    case 'spike':
-       return (
-        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-          <path d="M10 50 L20 10 L35 45 L50 0 L65 45 L80 10 L90 50 Z" fill={color} />
-        </svg>
-       );
-    case 'pompadour':
-      return (
-        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-          <path d="M10 50 Q10 0 50 0 Q90 0 90 50 Q50 30 10 50" fill={color} />
-        </svg>
-      );
-    default: return null;
-  }
-};
 
 interface Task {
   id: string;
@@ -1250,11 +1301,24 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
 };
 
 const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplete: (config: AvatarConfig) => void, user: any, userName: string | null }) => {
+  // Production-grade state management
   const [config, setConfig] = useState<AvatarConfig>(() => {
     const saved = localStorage.getItem('avatarConfig');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Validate and sanitize saved config
+        return {
+          skinColor: parsed.skinColor || '#f3c9b1',
+          hairStyle: ['none', 'bald', 'short', 'long', 'pompadour', 'curly', 'spike', 'fade', 'textured'].includes(parsed.hairStyle) ? parsed.hairStyle : 'short',
+          hairColor: parsed.hairColor || '#4a2c2a',
+          shirtStyle: ['tshirt', 'hoodie', 'suit', 'dress'].includes(parsed.shirtStyle) ? parsed.shirtStyle : 'hoodie',
+          shirtColor: parsed.shirtColor || '#000000',
+          pantsStyle: ['jeans', 'shorts', 'suit-pants'].includes(parsed.pantsStyle) ? parsed.pantsStyle : 'jeans',
+          pantsColor: parsed.pantsColor || '#1e293b',
+          bodyType: ['slim', 'normal', 'wide'].includes(parsed.bodyType) ? parsed.bodyType : 'normal',
+          useGooglePhoto: !!parsed.useGooglePhoto
+        };
       } catch {
         // Fallback if corrupted
       }
@@ -1272,19 +1336,88 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
     };
   });
 
-  const skinColors = ['#f3c9b1', '#e0ac69', '#8d5524', '#c68642', '#ffdbac', '#f1c27d'];
-  const hairColors = ['#4a2c2a', '#2c1e1e', '#d6b37a', '#a5a5a5', '#000000', '#7c3aed', '#3b82f6'];
-  const shirtColors = ['#0f172a', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#f8fafc', '#ef4444', '#f59e0b'];
-  const pantsColors = ['#1e293b', '#334155', '#475569', '#1e1b4b', '#000000', '#2d3748'];
-  const hairStyles: AvatarConfig['hairStyle'][] = ['none', 'bald', 'short', 'long', 'pompadour', 'curly', 'spike', 'fade', 'textured'];
-  const shirtStyles: AvatarConfig['shirtStyle'][] = ['tshirt', 'hoodie', 'suit', 'dress'];
-  const pantsStyles: AvatarConfig['pantsStyle'][] = ['jeans', 'shorts', 'suit-pants'];
-  const bodyTypes: AvatarConfig['bodyType'][] = ['slim', 'normal', 'wide'];
+  // Production-grade color palettes
+  const skinColors = [
+    { name: 'Light', value: '#f3c9b1' },
+    { name: 'Medium', value: '#e0ac69' },
+    { name: 'Tan', value: '#8d5524' },
+    { name: 'Olive', value: '#c68642' },
+    { name: 'Fair', value: '#ffdbac' },
+    { name: 'Peach', value: '#f1c27d' }
+  ];
+  
+  const hairColors = [
+    { name: 'Brown', value: '#4a2c2a' },
+    { name: 'Black', value: '#2c1e1e' },
+    { name: 'Blonde', value: '#d6b37a' },
+    { name: 'Gray', value: '#a5a5a5' },
+    { name: 'Jet Black', value: '#000000' },
+    { name: 'Purple', value: '#7c3aed' },
+    { name: 'Blue', value: '#3b82f6' }
+  ];
+  
+  const shirtColors = [
+    { name: 'Midnight', value: '#0f172a' },
+    { name: 'Ocean', value: '#2563eb' },
+    { name: 'Forest', value: '#16a34a' },
+    { name: 'Amber', value: '#d97706' },
+    { name: 'Royal', value: '#7c3aed' },
+    { name: 'Cloud', value: '#f8fafc' },
+    { name: 'Ruby', value: '#ef4444' },
+    { name: 'Gold', value: '#f59e0b' }
+  ];
+  
+  const pantsColors = [
+    { name: 'Navy', value: '#1e293b' },
+    { name: 'Slate', value: '#334155' },
+    { name: 'Stone', value: '#475569' },
+    { name: 'Indigo', value: '#1e1b4b' },
+    { name: 'Black', value: '#000000' },
+    { name: 'Charcoal', value: '#2d3748' }
+  ];
+  
+  const hairStyles: Array<{ name: string; value: AvatarConfig['hairStyle'] }> = [
+    { name: 'None', value: 'none' },
+    { name: 'Bald', value: 'bald' },
+    { name: 'Short', value: 'short' },
+    { name: 'Long', value: 'long' },
+    { name: 'Pompadour', value: 'pompadour' },
+    { name: 'Curly', value: 'curly' },
+    { name: 'Spike', value: 'spike' },
+    { name: 'Fade', value: 'fade' },
+    { name: 'Textured', value: 'textured' }
+  ];
+  
+  const shirtStyles: Array<{ name: string; value: AvatarConfig['shirtStyle'] }> = [
+    { name: 'T-Shirt', value: 'tshirt' },
+    { name: 'Hoodie', value: 'hoodie' },
+    { name: 'Suit', value: 'suit' },
+    { name: 'Dress', value: 'dress' }
+  ];
+  
+  const pantsStyles: Array<{ name: string; value: AvatarConfig['pantsStyle'] }> = [
+    { name: 'Jeans', value: 'jeans' },
+    { name: 'Shorts', value: 'shorts' },
+    { name: 'Suit Pants', value: 'suit-pants' }
+  ];
+  
+  const bodyTypes: Array<{ name: string; value: AvatarConfig['bodyType'] }> = [
+    { name: 'Slim', value: 'slim' },
+    { name: 'Normal', value: 'normal' },
+    { name: 'Wide', value: 'wide' }
+  ];
+
+  // Production-grade update functions with immediate feedback
+  const updateConfig = (updates: Partial<AvatarConfig>) => {
+    const newConfig = { ...config, ...updates };
+    setConfig(newConfig);
+    // Immediate visual feedback - save to localStorage
+    localStorage.setItem('avatarConfig', JSON.stringify(newConfig));
+  };
 
   const handleComplete = async () => {
-    // Validate config before saving
+    // Final validation
     const validConfig = {
-      ...config,
       skinColor: config.skinColor || '#f3c9b1',
       hairStyle: config.hairStyle || 'short',
       hairColor: config.hairColor || '#4a2c2a',
@@ -1388,10 +1521,10 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                 {hairStyles.map(style => (
                   <button 
                     key={style}
-                    onClick={() => setConfig({ ...config, hairStyle: style })}
+                    onClick={() => updateConfig({ hairStyle: style.value })}
                     className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.hairStyle === style ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >
-                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                    {style.name.charAt(0).toUpperCase() + style.name.slice(1)}
                   </button>
                 ))}
               </div>
@@ -1404,7 +1537,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                 {hairColors.map(color => (
                   <button 
                     key={color}
-                    onClick={() => setConfig({ ...config, hairColor: color })}
+                    onClick={() => updateConfig({ hairColor: color.value })}
                     className={`w-8 h-8 rounded-full border-4 transition-all ${config.hairColor === color ? 'border-black scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
                     style={{ backgroundColor: color }}
                   />
@@ -1420,10 +1553,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                   <button 
                     key={style}
                     onClick={() => {
-                      const newConfig = { ...config, shirtStyle: style };
-                      setConfig(newConfig);
-                      // Immediate visual feedback - save to localStorage
-                      localStorage.setItem('avatarConfig', JSON.stringify(newConfig));
+                      updateConfig({ shirtStyle: style.value });
                     }}
                     className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
                       config.shirtStyle === style 
@@ -1431,7 +1561,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:scale-105'
                     }`}
                   >
-                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                    {style.name.charAt(0).toUpperCase() + style.name.slice(1)}
                   </button>
                 ))}
               </div>
@@ -1469,10 +1599,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                   <button 
                     key={style}
                     onClick={() => {
-                      const newConfig = { ...config, pantsStyle: style };
-                      setConfig(newConfig);
-                      // Immediate visual feedback - save to localStorage
-                      localStorage.setItem('avatarConfig', JSON.stringify(newConfig));
+                      updateConfig({ pantsStyle: style.value });
                     }}
                     className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
                       config.pantsStyle === style 
@@ -1480,7 +1607,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:scale-105'
                     }`}
                   >
-                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                    {style.name.charAt(0).toUpperCase() + style.name.slice(1)}
                   </button>
                 ))}
               </div>
@@ -1493,10 +1620,10 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                 {bodyTypes.map(type => (
                   <button 
                     key={type}
-                    onClick={() => setConfig({ ...config, bodyType: type })}
+                    onClick={() => updateConfig({ bodyType: type.value })}
                     className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.bodyType === type ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                    {type.name.charAt(0).toUpperCase() + type.name.slice(1)}
                   </button>
                 ))}
               </div>
