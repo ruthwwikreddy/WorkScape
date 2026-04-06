@@ -391,18 +391,51 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
   isLocal?: boolean;
   photoURL?: string;
 }) => {
+  const profileImg = photoURL || (isLocal ? auth.currentUser?.photoURL : null);
+  const useProfilePic = profileImg && config.useGooglePhoto;
+
+  // Fixed human-proportional metrics
   const bodyMetrics = useMemo(() => {
     switch(config.bodyType) {
-      case 'slim': return { w: 34, h: 30, armX: 18, legX: 8 };
-      case 'wide': return { w: 54, h: 34, armX: 28, legX: 12 };
-      default: return { w: 44, h: 32, armX: 23, legX: 10 };
+      case 'slim': return { 
+        bodyWidth: 32, 
+        bodyHeight: 28, 
+        headSize: 24,
+        legWidth: 6,
+        legHeight: 16,
+        armWidth: 4,
+        armHeight: 12
+      };
+      case 'wide': return { 
+        bodyWidth: 48, 
+        bodyHeight: 36, 
+        headSize: 28,
+        legWidth: 8,
+        legHeight: 18,
+        armWidth: 6,
+        armHeight: 14
+      };
+      default: return { 
+        bodyWidth: 40, 
+        bodyHeight: 32, 
+        headSize: 26,
+        legWidth: 7,
+        legHeight: 17,
+        armWidth: 5,
+        armHeight: 13
+      };
     }
   }, [config.bodyType]);
 
-  const profileImg = photoURL || (isLocal ? auth.currentUser?.photoURL : null);
+  const totalHeight = bodyMetrics.headSize + bodyMetrics.bodyHeight + bodyMetrics.legHeight;
+  const containerSize = 80; // Fixed container for consistent scaling
 
   return (
-    <div className="relative flex items-center justify-center" style={{ width: 64, height: 64 }}>
+    <div className="relative flex items-center justify-center" style={{ 
+      width: containerSize, 
+      height: containerSize,
+      transform: 'scale(0.8)' // Slightly smaller for better fit
+    }}>
       <style>{`
         @keyframes v-walk {
           0%, 100% { transform: translateY(0) rotate(0); }
@@ -451,81 +484,183 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
       {/* Base Layer: Shadow */}
       <div className="absolute bottom-0 w-10 h-3 bg-black/20 rounded-full blur-[6px]" />
 
-      {/* Character Assembly */}
-      <div className="relative flex flex-col items-center" style={{ animation: isWalking ? 'v-walk 0.6s infinite ease-in-out' : 'v-breathe 3s infinite ease-in-out' }}>
+      {/* Character Assembly - Proper Layering Order */}
+      <div 
+        className="relative flex flex-col items-center" 
+        style={{ 
+          animation: isWalking ? 'v-walk 0.6s infinite ease-in-out' : 'v-breathe 3s infinite ease-in-out',
+          transformOrigin: 'center bottom'
+        }}
+      >
+        {/* Layer 1: Shadow */}
+        <div className="absolute bottom-0 w-12 h-3 bg-black/20 rounded-full blur-[4px] z-0" />
         
-        {/* Layer 1: Legs & Shoes */}
-        <div className="flex gap-2.5 z-10 -mb-2">
-          <div className="w-4 h-8 rounded-b-lg shadow-sm relative overflow-hidden" style={{ backgroundColor: config.pantsColor }}>
-            <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
-          </div>
-          <div className="w-4 h-8 rounded-b-lg shadow-sm relative overflow-hidden" style={{ backgroundColor: config.pantsColor }}>
-            <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
+        {/* Layer 2: Legs */}
+        <div className="relative z-10 mb-0">
+          <div className="flex gap-2 justify-center">
+            <div 
+              className="rounded-b-lg shadow-sm relative overflow-hidden" 
+              style={{ 
+                width: bodyMetrics.legWidth, 
+                height: bodyMetrics.legHeight, 
+                backgroundColor: config.pantsColor 
+              }}
+            >
+              <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
+            </div>
+            <div 
+              className="rounded-b-lg shadow-sm relative overflow-hidden" 
+              style={{ 
+                width: bodyMetrics.legWidth, 
+                height: bodyMetrics.legHeight, 
+                backgroundColor: config.pantsColor 
+              }}
+            >
+              <div className="absolute bottom-0 w-full h-2 bg-slate-900/40" />
+            </div>
           </div>
         </div>
 
-        {/* Layer 2: Torso & Arms */}
-        <div className="relative z-20">
-          {/* Arms (Left) */}
-          <div className="absolute -left-3 top-2 w-3.5 h-10 rounded-full origin-top shadow-md" style={{ backgroundColor: config.shirtColor, animation: isWalking ? 'v-swing-l 0.6s infinite' : 'none' }}>
-             <div className="absolute bottom-[-2px] w-4 h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
+        {/* Layer 3: Torso & Arms */}
+        <div className="relative z-20 -mt-1">
+          {/* Arms (Behind) */}
+          <div 
+            className="absolute rounded-full origin-top shadow-md" 
+            style={{ 
+              backgroundColor: config.shirtColor, 
+              width: bodyMetrics.armWidth, 
+              height: bodyMetrics.armHeight,
+              left: -bodyMetrics.armWidth - 2,
+              top: 4,
+              animation: isWalking ? 'v-swing-l 0.6s infinite' : 'none',
+              transformOrigin: 'top center'
+            }}
+          >
+            <div 
+              className="absolute rounded-full" 
+              style={{ 
+                backgroundColor: config.skinColor,
+                width: bodyMetrics.armWidth + 2,
+                height: bodyMetrics.armWidth + 2,
+                bottom: -2,
+                left: -1
+              }} 
+            />
           </div>
+          
           {/* Torso */}
           <div 
-            className="rounded-[14px] shadow-xl border border-black/5 relative overflow-hidden"
-            style={{ backgroundColor: config.shirtColor, width: bodyMetrics.w, height: 40 }}
+            className="rounded-lg shadow-xl border border-black/5 relative overflow-hidden"
+            style={{ 
+              backgroundColor: config.shirtColor, 
+              width: bodyMetrics.bodyWidth, 
+              height: bodyMetrics.bodyHeight 
+            }}
           >
             {/* Clothing Details */}
             {config.shirtStyle === 'suit' && (
               <div className="absolute inset-0">
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-10 bg-white" />
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 w-2 h-4 bg-black" />
-                <div className="absolute inset-0 border-t-[12px] border-l-[18px] border-r-[18px] border-slate-900 rounded-t-[14px]" />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-8 bg-white" />
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 w-2 h-3 bg-black" />
+                <div className="absolute inset-0 border-t-[8px] border-l-[12px] border-r-[12px] border-slate-900 rounded-t-lg" />
               </div>
             )}
             {config.shirtStyle === 'hoodie' && (
-              <div className="absolute top-0 w-full h-4 bg-black/10 rounded-t-[14px]" />
+              <div className="absolute top-0 w-full h-3 bg-black/10 rounded-t-lg" />
+            )}
+            {config.shirtStyle === 'dress' && (
+              <div className="absolute bottom-0 w-full h-2 bg-white/20 rounded-b-lg" />
             )}
             <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
           </div>
-          {/* Arms (Right) */}
-          <div className="absolute -right-3 top-2 w-3.5 h-10 rounded-full origin-top shadow-md" style={{ backgroundColor: config.shirtColor, animation: isWalking ? 'v-swing-r 0.6s infinite' : 'none' }}>
-             <div className="absolute bottom-[-2px] w-4 h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
+          
+          {/* Arms (Front) */}
+          <div 
+            className="absolute rounded-full origin-top shadow-md" 
+            style={{ 
+              backgroundColor: config.shirtColor, 
+              width: bodyMetrics.armWidth, 
+              height: bodyMetrics.armHeight,
+              right: -bodyMetrics.armWidth - 2,
+              top: 4,
+              animation: isWalking ? 'v-swing-r 0.6s infinite' : 'none',
+              transformOrigin: 'top center'
+            }}
+          >
+            <div 
+              className="absolute rounded-full" 
+              style={{ 
+                backgroundColor: config.skinColor,
+                width: bodyMetrics.armWidth + 2,
+                height: bodyMetrics.armWidth + 2,
+                bottom: -2,
+                left: -1
+              }} 
+            />
           </div>
         </div>
 
-        {/* Layer 3: Head Complex */}
-        <div className="absolute -top-10 z-30">
-          <div className="relative w-12 h-12">
-            {/* Head Base */}
-            <div className="absolute inset-0 rounded-[18px] overflow-hidden bg-white shadow-2xl border-2 border-white/50">
-              {profileImg ? (
-                <img src={profileImg} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200" style={{ backgroundColor: config.skinColor }}>
-                   <div className="flex gap-2">
-                      <div className="w-1.5 h-1.5 bg-black/80 rounded-full" style={{ animation: 'v-blink 4s infinite' }} />
-                      <div className="w-1.5 h-1.5 bg-black/80 rounded-full" style={{ animation: 'v-blink 4s infinite' }} />
-                   </div>
+        {/* Layer 4: Head */}
+        <div className="relative z-30 -mt-2">
+          <div 
+            className="relative rounded-full overflow-hidden shadow-2xl border-2 border-white/30"
+            style={{ 
+              width: bodyMetrics.headSize, 
+              height: bodyMetrics.headSize 
+            }}
+          >
+            {useProfilePic ? (
+              <img 
+                src={profileImg} 
+                alt="Profile" 
+                className="w-full h-full object-cover"
+                style={{ 
+                  objectPosition: 'center',
+                  objectFit: 'cover'
+                }}
+              />
+            ) : (
+              <div 
+                className="w-full h-full flex items-center justify-center"
+                style={{ backgroundColor: config.skinColor }}
+              >
+                <div className="flex gap-2">
+                  <div 
+                    className="w-1.5 h-1.5 bg-black/80 rounded-full" 
+                    style={{ animation: 'v-blink 4s infinite' }} 
+                  />
+                  <div 
+                    className="w-1.5 h-1.5 bg-black/80 rounded-full" 
+                    style={{ animation: 'v-blink 4s infinite' }} 
+                  />
                 </div>
-              )}
-            </div>
-
-            {/* Hairstyle Layer (Always on top) */}
-            {config.hairStyle !== 'none' && (
-              <div className="absolute inset-x-[-4px] top-[-8px] bottom-0 z-40 pointer-events-none">
-                 <HairstyleSVG type={config.hairStyle} color={config.hairColor} />
               </div>
             )}
           </div>
-        </div>
 
+          {/* Layer 5: Hair (Always on top) */}
+          {config.hairStyle !== 'none' && (
+            <div 
+              className="absolute inset-x-[-6px] top-[-10px] bottom-0 z-40 pointer-events-none"
+              style={{ 
+                width: bodyMetrics.headSize + 12,
+                height: bodyMetrics.headSize + 10
+              }}
+            >
+              <HairstyleSVG 
+                type={config.hairStyle} 
+                color={config.hairColor} 
+                headSize={bodyMetrics.headSize}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 });
 
-const HairstyleSVG = ({ type, color }: { type: AvatarConfig['hairStyle'], color: string }) => {
+const HairstyleSVG = ({ type, color, headSize }: { type: AvatarConfig['hairStyle'], color: string, headSize?: number }) => {
   switch(type) {
     case 'fade': 
       return (
@@ -1107,7 +1242,14 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
 const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplete: (config: AvatarConfig) => void, user: any, userName: string | null }) => {
   const [config, setConfig] = useState<AvatarConfig>(() => {
     const saved = localStorage.getItem('avatarConfig');
-    return saved ? JSON.parse(saved) : {
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // Fallback if corrupted
+      }
+    }
+    return {
       skinColor: '#f3c9b1',
       hairStyle: 'short',
       hairColor: '#4a2c2a',
@@ -1130,16 +1272,30 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
   const bodyTypes: AvatarConfig['bodyType'][] = ['slim', 'normal', 'wide'];
 
   const handleComplete = async () => {
-    localStorage.setItem('avatarConfig', JSON.stringify(config));
+    // Validate config before saving
+    const validConfig = {
+      ...config,
+      skinColor: config.skinColor || '#f3c9b1',
+      hairStyle: config.hairStyle || 'short',
+      hairColor: config.hairColor || '#4a2c2a',
+      shirtStyle: config.shirtStyle || 'hoodie',
+      shirtColor: config.shirtColor || '#000000',
+      pantsStyle: config.pantsStyle || 'jeans',
+      pantsColor: config.pantsColor || '#1e293b',
+      bodyType: config.bodyType || 'normal',
+      useGooglePhoto: !!config.useGooglePhoto
+    };
+    
+    localStorage.setItem('avatarConfig', JSON.stringify(validConfig));
     if (user) {
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         name: userName,
-        avatarConfig: config,
+        avatarConfig: validConfig,
         updatedAt: new Date().toISOString()
       }, { merge: true });
     }
-    onComplete(config);
+    onComplete(validConfig);
   };
 
   return (
@@ -1253,8 +1409,17 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                 {shirtStyles.map(style => (
                   <button 
                     key={style}
-                    onClick={() => setConfig({ ...config, shirtStyle: style })}
-                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.shirtStyle === style ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    onClick={() => {
+                      const newConfig = { ...config, shirtStyle: style };
+                      setConfig(newConfig);
+                      // Immediate visual feedback - save to localStorage
+                      localStorage.setItem('avatarConfig', JSON.stringify(newConfig));
+                    }}
+                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                      config.shirtStyle === style 
+                        ? 'bg-black text-white shadow-lg scale-105' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:scale-105'
+                    }`}
                   >
                     {style.charAt(0).toUpperCase() + style.slice(1)}
                   </button>
@@ -1269,8 +1434,17 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                 {shirtColors.map(color => (
                   <button 
                     key={color}
-                    onClick={() => setConfig({ ...config, shirtColor: color })}
-                    className={`w-8 h-8 rounded-full border-4 transition-all ${config.shirtColor === color ? 'border-black scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
+                    onClick={() => {
+                      const newConfig = { ...config, shirtColor: color };
+                      setConfig(newConfig);
+                      // Immediate visual feedback - save to localStorage
+                      localStorage.setItem('avatarConfig', JSON.stringify(newConfig));
+                    }}
+                    className={`w-8 h-8 rounded-full border-4 transition-all ${
+                      config.shirtColor === color 
+                        ? 'border-black scale-110 shadow-lg' 
+                        : 'border-transparent hover:scale-105 hover:border-slate-300'
+                    }`}
                     style={{ backgroundColor: color }}
                   />
                 ))}
@@ -1284,8 +1458,17 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
                 {pantsStyles.map(style => (
                   <button 
                     key={style}
-                    onClick={() => setConfig({ ...config, pantsStyle: style })}
-                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${config.pantsStyle === style ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    onClick={() => {
+                      const newConfig = { ...config, pantsStyle: style };
+                      setConfig(newConfig);
+                      // Immediate visual feedback - save to localStorage
+                      localStorage.setItem('avatarConfig', JSON.stringify(newConfig));
+                    }}
+                    className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                      config.pantsStyle === style 
+                        ? 'bg-black text-white shadow-lg scale-105' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:scale-105'
+                    }`}
                   >
                     {style.charAt(0).toUpperCase() + style.slice(1)}
                   </button>
@@ -1330,9 +1513,15 @@ const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, local
   // Proximity-based visibility for speaking cue
   const canSeeSpeakingCue = dist < VOICE_RADIUS * 1.5;
 
-  // Interpolation logic: Use a more responsive spring for remote players
-  // to follow the server updates smoothly.
-  const springConfig = { type: 'spring', damping: 35, stiffness: 250, mass: 0.4 };
+  // Improved interpolation for smoother movement
+  const springConfig = { 
+    type: 'spring', 
+    damping: 40, 
+    stiffness: 300, 
+    mass: 0.3,
+    restDelta: 0.001,
+    restSpeed: 0.001
+  };
 
   // Meeting Room Isolation Logic:
   const isMeetingRoom = (z: string) => z && z.startsWith("Conference Room");
@@ -2109,12 +2298,11 @@ export default function App() {
       
       <div 
         id="office"
-        className="relative bg-white border-[12px] border-black rounded-lg shadow-[0_60px_120px_rgba(0,0,0,0.5)] overflow-hidden"
+        className="relative bg-slate-50 border-[12px] border-black rounded-lg shadow-[0_60px_120px_rgba(0,0,0,0.5)] overflow-hidden"
         style={{ 
           width: OFFICE_WIDTH, 
-          height: OFFICE_HEIGHT, 
-          backgroundImage: 'radial-gradient(rgba(0,0,0,0.05) 1.5px, transparent 1.5px)', 
-          backgroundSize: '40px 40px' 
+          height: OFFICE_HEIGHT,
+          background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)'
         }}
       >
         {/* Dynamic Lighting Overlay */}
