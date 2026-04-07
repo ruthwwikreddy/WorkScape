@@ -72,28 +72,13 @@ service cloud.firestore {
     }
 
     // ===============================================================
-    // Rules - ENHANCED FOR BETTER PERMISSIONS
+    // Rules
     // ===============================================================
 
     match /users/{userId} {
-      // Allow reading own user data
-      allow read: if isAuthenticated() && request.auth.uid == userId;
-      
-      // Allow creating user documents with proper validation
-      allow create: if isAuthenticated() && 
-                   isValidUser(request.resource.data) && 
-                   request.resource.data.uid == request.auth.uid;
-      
-      // Allow updating own user documents with relaxed validation
-      allow update: if isAuthenticated() && 
-                   request.auth.uid == userId &&
-                   request.resource.data.uid == resource.data.uid &&
-                   isValidUser(request.resource.data);
-      
-      // Allow deleting own documents
-      allow delete: if isAuthenticated() && 
-                   request.auth.uid == userId &&
-                   resource.data.uid == request.auth.uid;
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged();
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified();
     }
 
     match /rooms/{roomId} {
