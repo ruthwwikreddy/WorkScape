@@ -12,6 +12,7 @@ async function startServer() {
   const app = express();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
+    path: "/socket.io/",
     cors: {
       origin: "*",
       methods: ["GET", "POST"]
@@ -37,6 +38,8 @@ async function startServer() {
 
   // Track users by room
   const rooms: Record<string, Record<string, any>> = {};
+  // Track whiteboard state by room
+  const whiteboards: Record<string, any[]> = {};
 
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
@@ -63,6 +66,8 @@ async function startServer() {
       
       // Send current users in the room to the new user
       socket.emit("init", rooms[roomId]);
+      // Send current whiteboard state to the new user
+      socket.emit("whiteboard:init", whiteboards[roomId] || []);
       
       // Broadcast new user to others in the same room
       socket.to(roomId).emit("user:joined", rooms[roomId][socket.id]);
@@ -136,6 +141,35 @@ async function startServer() {
       }
     });
 
+    socket.on("chat:dm", (data) => {
+      const roomId = (socket as any).roomId;
+      if (roomId && rooms[roomId] && rooms[roomId][socket.id]) {
+        io.to(data.to).emit("chat:dm", {
+          from: socket.id,
+          fromName: rooms[roomId][socket.id].name,
+          message: data.message
+        });
+      }
+    });
+
+    // Whiteboard events
+    socket.on("whiteboard:draw", (data) => {
+      const roomId = (socket as any).roomId;
+      if (roomId) {
+        if (!whiteboards[roomId]) whiteboards[roomId] = [];
+        whiteboards[roomId].push(data);
+        socket.to(roomId).emit("whiteboard:draw", data);
+      }
+    });
+
+    socket.on("whiteboard:clear", () => {
+      const roomId = (socket as any).roomId;
+      if (roomId) {
+        whiteboards[roomId] = [];
+        io.to(roomId).emit("whiteboard:clear");
+      }
+    });
+
     // WebRTC Signaling
     socket.on("signal", (data) => {
       io.to(data.to).emit("signal", {
@@ -165,6 +199,8 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+    // IMPORTANT: Socket.io handles its own requests on the httpServer.
+    // We mount Vite middleware AFTER ensuring Socket.io is attached.
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -177,6 +213,7 @@ async function startServer() {
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`>>> Server is listening on 0.0.0.0:${PORT}`);
     console.log(`>>> Socket.IO is initialized and attached to httpServer`);
+    console.log(`>>> Health check available at http://localhost:${PORT}/api/health`);
   });
 }
 

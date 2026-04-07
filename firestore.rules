@@ -82,7 +82,7 @@ service cloud.firestore {
     }
 
     match /rooms/{roomId} {
-      allow read: if (resource != null && resource.data.isPublic == true) || isAuthenticated();
+      allow read: if isAuthenticated() || (resource != null && resource.data.isPublic == true);
       allow create: if isAuthenticated() && hasOnlyAllowedFields(['id', 'name', 'password', 'isPublic', 'createdBy', 'createdAt']) &&
                     request.resource.data.id == roomId &&
                     request.resource.data.createdBy == request.auth.uid;
@@ -92,8 +92,8 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
       allow create: if isAuthenticated() && isValidTask(request.resource.data) && uidUnchanged();
-      allow update: if isDocOwner() && isValidTask(request.resource.data) && uidNotModified();
-      allow delete: if isDocOwner();
+      allow update: if isAuthenticated() && isDocOwner() && isValidTask(request.resource.data) && uidNotModified();
+      allow delete: if isAuthenticated() && isDocOwner();
     }
   }
 }

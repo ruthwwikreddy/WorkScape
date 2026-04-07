@@ -2206,6 +2206,7 @@ export default function App() {
 
     console.log("Connecting to socket...", { userName, roomId });
     socketRef.current = io({
+      path: "/socket.io/",
       transports: ['polling', 'websocket'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
