@@ -2192,7 +2192,7 @@ export default function App() {
 
     console.log("Connecting to socket...", { userName, roomId });
     socketRef.current = io({
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
     });
