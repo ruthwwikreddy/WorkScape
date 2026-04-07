@@ -60,6 +60,7 @@ interface Rect { left: number; right: number; top: number; bottom: number; }
 interface Zone { name: string; bounds: Rect; }
 
 interface AvatarConfig {
+  avatarMode: 'default' | 'beta';
   skinColor: string;
   hairStyle: 'none' | 'short' | 'medium' | 'curly' | 'long' | 'buzz' | 'mohawk' | 'bob';
   hairColor: string;
@@ -380,7 +381,148 @@ const SettingsModal = ({
   );
 };
 
-const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean }) => {
+const PixelAvatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, name }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean; name?: string }) => {
+  const P = 4; // Pixel size
+  
+  const statusColors: Record<string, string> = {
+    available: '#22c55e',
+    busy: '#ef4444',
+    focus: '#8b5cf6'
+  };
+
+  // Helper for pixel blocks
+  const Pixel = ({ x, y, w, h, color, className = "", z = 0 }: { x: number; y: number; w: number; h: number; color: string; className?: string; z?: number }) => (
+    <div 
+      className={`absolute ${className}`}
+      style={{ 
+        left: x * P, 
+        top: y * P, 
+        width: w * P, 
+        height: h * P, 
+        backgroundColor: color,
+        imageRendering: 'pixelated',
+        zIndex: z
+      }} 
+    />
+  );
+
+  return (
+    <div className="relative flex flex-col items-center justify-center" style={{ width: 12 * P, height: 20 * P }}>
+      {/* Shadow - Layer 0 */}
+      <div className="absolute bottom-0 w-10 h-3 bg-black/20 rounded-[100%] blur-[1px] z-0" />
+
+      <div className={`relative w-full h-full transition-transform duration-200 ${isWalking ? 'animate-bounce' : ''}`} style={{ transformStyle: 'preserve-3d' }}>
+        {/* Legs & Shoes - Layer 10 */}
+        <Pixel x={3} y={15} w={2} h={4} color={config.bottomColor} z={10} />
+        <Pixel x={7} y={15} w={2} h={4} color={config.bottomColor} z={10} />
+        {/* Shoes */}
+        <Pixel x={2} y={18} w={3} h={2} color="#1e293b" z={11} />
+        <Pixel x={7} y={18} w={3} h={2} color="#1e293b" z={11} />
+
+        {/* Torso - Layer 20 */}
+        <Pixel x={2} y={9} w={8} h={7} color={config.topColor} z={20} />
+        {/* Striped Shirt Detail */}
+        {config.topType === 'shirt' && (
+          <>
+            <Pixel x={2} y={11} w={8} h={1} color="rgba(255,255,255,0.2)" z={21} />
+            <Pixel x={2} y={13} w={8} h={1} color="rgba(255,255,255,0.2)" z={21} />
+          </>
+        )}
+        {/* Arms */}
+        <Pixel x={0} y={9} w={2} h={6} color={config.topColor} z={20} />
+        <Pixel x={10} y={9} w={2} h={6} color={config.topColor} z={20} />
+        {/* Hands */}
+        <Pixel x={0} y={14} w={2} h={2} color={config.skinColor} z={20} />
+        <Pixel x={10} y={14} w={2} h={2} color={config.skinColor} z={20} />
+
+        {/* Head - Layer 30 */}
+        <Pixel x={2} y={1} w={8} h={8} color={config.skinColor} z={30} />
+        {/* Face Shading */}
+        <Pixel x={2} y={7} w={8} h={2} color="rgba(0,0,0,0.08)" z={31} />
+        {/* Eyes */}
+        <Pixel x={3} y={4} w={1} h={1} color="#000" z={32} />
+        <Pixel x={8} y={4} w={1} h={1} color="#000" z={32} />
+
+        {/* Hair - Layer 40 */}
+        {config.hairStyle !== 'none' && (
+          <>
+            {/* Hair sits above head */}
+            <Pixel x={2} y={0} w={8} h={3} color={config.hairColor} z={40} />
+            {config.hairStyle === 'long' && (
+              <>
+                <Pixel x={1} y={1} w={1} h={10} color={config.hairColor} z={40} />
+                <Pixel x={10} y={1} w={1} h={10} color={config.hairColor} z={40} />
+              </>
+            )}
+            {config.hairStyle === 'curly' && (
+              <>
+                <Pixel x={1} y={1} w={1} h={4} color={config.hairColor} z={40} />
+                <Pixel x={10} y={1} w={1} h={4} color={config.hairColor} z={40} />
+                <Pixel x={2} y={-1} w={2} h={1} color={config.hairColor} z={40} />
+                <Pixel x={8} y={-1} w={2} h={1} color={config.hairColor} z={40} />
+              </>
+            )}
+          </>
+        )}
+
+        {/* Accessory / Hat - Layer 50 */}
+        {config.accessory === 'hat' && (
+          <>
+            <Pixel x={1} y={0} w={10} h={2} color={config.accessoryColor || '#000'} z={50} />
+            <Pixel x={1} y={2} w={12} h={1} color={config.accessoryColor || '#000'} z={50} />
+          </>
+        )}
+        {config.accessory === 'glasses' && (
+          <>
+            <Pixel x={3} y={4} w={2} h={1} color="rgba(0,0,0,0.5)" z={50} />
+            <Pixel x={7} y={4} w={2} h={1} color="rgba(0,0,0,0.5)" z={50} />
+            <Pixel x={5} y={4} w={2} h={0.5} color="#000" z={50} />
+          </>
+        )}
+      </div>
+
+      {/* UI Identity Layer - Layer 100 */}
+      <div className="absolute -top-14 flex flex-col items-center gap-1 z-[100]">
+        <AnimatePresence>
+          {message && (
+            <motion.div 
+              initial={{ opacity: 0, y: 5 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0 }}
+              className="bg-black text-white text-[10px] px-2 py-1 rounded-md font-bold whitespace-nowrap mb-1 border border-white/20"
+            >
+              {message}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        <div className="flex items-center gap-2 bg-black text-white px-3 py-1.5 rounded-lg shadow-2xl border border-white/10">
+          <div className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)] ${status === 'busy' ? 'bg-red-500' : status === 'focus' ? 'bg-purple-500' : 'bg-green-500'}`} />
+          <span className="text-[10px] font-black uppercase tracking-widest">{name || "Player"}</span>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {emote && (
+          <motion.div 
+            initial={{ scale: 0, y: 0 }} 
+            animate={{ scale: 1.5, y: -40 }} 
+            exit={{ scale: 0, opacity: 0 }} 
+            className="absolute z-[1200] text-2xl pointer-events-none"
+          >
+            {emote}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+});
+
+const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal, name }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean; name?: string }) => {
+  if (config.avatarMode === 'beta') {
+    return <PixelAvatar config={config} isWalking={isWalking} isSpeaking={isSpeaking} message={message} emote={emote} status={status} isLocal={isLocal} name={name} />;
+  }
+
   const bodyWidth = config.bodyType === 'slim' ? 24 : config.bodyType === 'wide' ? 36 : 30;
   const shoulderWidth = config.bodyType === 'slim' ? 28 : config.bodyType === 'wide' ? 44 : 36;
   const totalHeight = config.heightType === 'short' ? 70 : config.heightType === 'tall' ? 90 : 80;
@@ -1350,6 +1492,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
   const [config, setConfig] = useState<AvatarConfig>(() => {
     const saved = localStorage.getItem('avatarConfig');
     return saved ? JSON.parse(saved) : {
+      avatarMode: 'default',
       skinColor: '#f3c9b1',
       hairStyle: 'short',
       hairColor: '#4a2c2a',
@@ -1409,7 +1552,7 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
           </div>
           
           <div className="scale-[3.5] mb-20 relative z-10">
-            <Avatar config={config} isWalking={false} isSpeaking={false} />
+            <Avatar config={config} isWalking={false} isSpeaking={false} name={userName || "You"} />
           </div>
 
           <div className="flex gap-4 relative z-10">
@@ -1439,6 +1582,25 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
         {/* Options Section */}
         <div className="md:w-3/5 p-10 overflow-y-auto custom-scrollbar">
           <div className="space-y-10">
+            {/* Avatar Mode Toggle */}
+            <section>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Avatar Version</h3>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setConfig({ ...config, avatarMode: 'default' })}
+                  className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${config.avatarMode === 'default' ? 'border-black bg-black text-white shadow-xl' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}
+                >
+                  Default (HD)
+                </button>
+                <button 
+                  onClick={() => setConfig({ ...config, avatarMode: 'beta' })}
+                  className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${config.avatarMode === 'beta' ? 'border-black bg-black text-white shadow-xl' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}
+                >
+                  Beta (Pixel)
+                </button>
+              </div>
+            </section>
+
             {/* Identity Toggle */}
             <section>
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Head Style</h3>
@@ -1735,6 +1897,7 @@ const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, local
         message={player.message}
         emote={player.emote}
         status={player.status}
+        name={player.name}
       />
       <audio ref={audioRef} autoPlay />
     </motion.div>
@@ -2530,6 +2693,7 @@ export default function App() {
             emote={localEmote || undefined}
             status={status}
             isLocal
+            name={userName}
           />
         </motion.div>
       </div>
