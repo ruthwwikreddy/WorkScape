@@ -495,11 +495,6 @@ const PixelAvatar = React.memo(({ config, isWalking, isSpeaking, message, emote,
             </motion.div>
           )}
         </AnimatePresence>
-        
-        <div className="flex items-center gap-2 bg-black text-white px-3 py-1.5 rounded-lg shadow-2xl border border-white/10">
-          <div className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)] ${status === 'busy' ? 'bg-red-500' : status === 'focus' ? 'bg-purple-500' : 'bg-green-500'}`} />
-          <span className="text-[10px] font-black uppercase tracking-widest">{name || "Player"}</span>
-        </div>
       </div>
 
       <AnimatePresence>
@@ -784,15 +779,6 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
         }
       `}</style>
 
-      {/* Status & Bubbles (Same as before but adjusted position) */}
-      <div className="absolute -top-16 flex flex-col items-center gap-1 z-[100]">
-        {status && (
-          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex flex-col items-center gap-1">
-            <div className="w-3 h-3 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: statusColors[status] || '#ccc' }} />
-            <span className="text-[8px] font-black uppercase tracking-tighter bg-white/80 backdrop-blur px-1 rounded border border-slate-100">{status}</span>
-          </motion.div>
-        )}
-      </div>
 
       <AnimatePresence>
         {emote && (
@@ -2206,8 +2192,7 @@ export default function App() {
 
     console.log("Connecting to socket...", { userName, roomId });
     socketRef.current = io({
-      path: "/socket.io/",
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
     });
@@ -2680,6 +2665,10 @@ export default function App() {
                 exit={{ opacity: 0, y: 10 }}
                 className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black text-white px-3 py-1 rounded-full shadow-lg border border-white/10 flex items-center gap-2"
               >
+                <div className={`w-2 h-2 rounded-full ${
+                  status === 'available' ? 'bg-emerald-500' : 
+                  status === 'busy' ? 'bg-amber-500' : 'bg-rose-500'
+                }`} />
                 <span className="text-[10px] font-black uppercase tracking-wider">{userName}</span>
                 {isSpeaking && <Mic className="w-3 h-3" />}
               </motion.div>
