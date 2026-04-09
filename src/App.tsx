@@ -962,12 +962,14 @@ interface Task {
   uid?: string;
 }
 
-const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, onAddTask, onToggleTask, onDeleteTask, onEditTask, onOpenSettings, onMinimapClick }: { 
+const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, remotePlayers, onAddTask, onToggleTask, onDeleteTask, onEditTask, onOpenSettings, onMinimapClick }: { 
   zone: string; 
   tasks: Task[]; 
   completedCount: number; 
   pos: Point; 
   roomId: string;
+  roomUsers: any[];
+  remotePlayers: Record<string, RemotePlayer>;
   onAddTask: (text: string) => void;
   onToggleTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
@@ -1132,6 +1134,46 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, onAddTask, o
           </div>
         </motion.div>
 
+        {/* Room Members */}
+        <motion.div 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.15 }}
+          className="bg-black p-5 rounded-2xl shadow-2xl w-72"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Users className="w-4 h-4 text-white" />
+            <h2 className="text-xs font-bold text-white/60 uppercase tracking-wider">Room Members</h2>
+          </div>
+          <div className="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+            {roomUsers.map((member) => {
+              const isOnline = Object.values(remotePlayers).some(p => p.name === member.name) || member.uid === auth.currentUser?.uid;
+              return (
+                <div key={member.uid} className="flex items-center justify-between group">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center overflow-hidden border border-white/5">
+                        {member.avatarConfig?.photoURL ? (
+                          <img src={member.avatarConfig.photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <User className="w-4 h-4 text-white/40" />
+                        )}
+                      </div>
+                      <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-black ${isOnline ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-white leading-none mb-1">{member.name}</span>
+                      <span className="text-[9px] text-white/40 uppercase tracking-widest font-black">
+                        {isOnline ? (member.status || 'Online') : 'Offline'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+
         {/* Share Button */}
         <motion.button 
           initial={{ x: -20, opacity: 0 }}
@@ -1251,7 +1293,17 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
   const [password, setPassword] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
-  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
+  const [roomUsers, setRoomUsers] = useState<any[]>([]);
+
+  // Fetch all users in the same room
+  useEffect(() => {
+    if (!roomId) return;
+    const q = query(collection(db, 'users'), where('roomId', '==', roomId));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setRoomUsers(snapshot.docs.map(d => d.data()));
+    });
+    return () => unsub();
+  }, [roomId]);
   const [selectedStatus, setSelectedStatus] = useState("available");
   const [showAvatarCustomizer, setShowAvatarCustomizer] = useState(false);
   const [tempAvatar, setTempAvatar] = useState<AvatarConfig | null>(null);
@@ -1982,12 +2034,13 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Save position periodically
+  // Save position and presence periodically
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(async () => {
       await setDoc(doc(db, 'users', user.uid), {
         lastPos: posRef.current,
+        lastSeen: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }, { merge: true });
     }, 10000); // Every 10 seconds
@@ -2046,6 +2099,18 @@ export default function App() {
     if (avatar) setAvatarConfig(avatar);
     if (initialStatus) setStatus(initialStatus as any);
     setRoomId(room);
+
+    // Update Firestore with current room and presence
+    if (currentUser) {
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        roomId: room,
+        status: initialStatus || 'available',
+        lastSeen: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+    
+    initVoice();
   };
 
   const handleMinimapClick = (p: Point) => {
@@ -2192,9 +2257,11 @@ export default function App() {
 
     console.log("Connecting to socket...", { userName, roomId });
     socketRef.current = io({
-      transports: ['polling', 'websocket'],
+      path: "/socket.io/",
+      transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      timeout: 20000
     });
     const socket = socketRef.current;
 
@@ -2580,6 +2647,8 @@ export default function App() {
         completedCount={completedCount} 
         pos={pos} 
         roomId={roomId} 
+        roomUsers={roomUsers}
+        remotePlayers={remotePlayers}
         onAddTask={handleAddTask}
         onToggleTask={handleToggleTask}
         onDeleteTask={handleDeleteTask}

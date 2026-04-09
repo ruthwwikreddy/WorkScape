@@ -12,16 +12,23 @@ async function startServer() {
   const app = express();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
+    path: "/socket.io/",
     cors: {
       origin: "*",
       methods: ["GET", "POST"]
-    }
+    },
+    transports: ["websocket", "polling"],
+    pingTimeout: 60000,
+    pingInterval: 25000
   });
 
   const PORT = 3000;
 
   // Logging middleware to track requests
   app.use((req, res, next) => {
+    if (req.url.includes("socket.io")) {
+      console.log(`[Socket.IO Path Check] ${req.method} ${req.url}`);
+    }
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();
   });

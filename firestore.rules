@@ -74,16 +74,19 @@ service cloud.firestore {
     // ===============================================================
     // Rules
     // ===============================================================
-
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged();
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified();
+      allow update: if isOwner(userId) && uidNotModified() && (
+        // Allow partial updates (like position, status, lastSeen, roomId) or full updates
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastPos', 'updatedAt', 'lastSeen', 'status', 'roomId'])) ||
+        isValidUser(request.resource.data)
+      );
     }
 
     match /rooms/{roomId} {
       allow read: if isAuthenticated() || (resource != null && resource.data.isPublic == true);
-      allow create: if isAuthenticated() && hasOnlyAllowedFields(['id', 'name', 'password', 'isPublic', 'createdBy', 'createdAt']) &&
+      allow create: if isAuthenticated() && 
                     request.resource.data.id == roomId &&
                     request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
