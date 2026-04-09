@@ -1294,19 +1294,10 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
   const [isCreating, setIsCreating] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [roomUsers, setRoomUsers] = useState<any[]>([]);
-
-  // Fetch all users in the same room
-  useEffect(() => {
-    if (!roomId) return;
-    const q = query(collection(db, 'users'), where('roomId', '==', roomId));
-    const unsub = onSnapshot(q, (snapshot) => {
-      setRoomUsers(snapshot.docs.map(d => d.data()));
-    });
-    return () => unsub();
-  }, [roomId]);
   const [selectedStatus, setSelectedStatus] = useState("available");
   const [showAvatarCustomizer, setShowAvatarCustomizer] = useState(false);
   const [tempAvatar, setTempAvatar] = useState<AvatarConfig | null>(null);
+  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
 
   useEffect(() => {
     const q = query(collection(db, 'rooms'), where('isPublic', '==', true));
