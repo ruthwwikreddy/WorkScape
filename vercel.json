@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/room/:roomId*",
+      "destination": "/"
+    },
+    {
+      "source": "/join-create",
+      "destination": "/"
+    },
+    {
+      "source": "/((?!\\.js$|\\.css$|\\.png$|\\.jpg$|\\.jpeg$|\\.gif$|\\.svg$|\\.ico$|\\.woff$|\\.woff2$|\\.ttf$|\\.eot$).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

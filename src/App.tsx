@@ -3,9 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Component as InfiniteGrid } from './components/ui/the-infinite-grid';
+import { sanitizeUserInput, sanitizeFileName, sanitizeText, sanitizeRoomId } from './lib/sanitize';
+
+// Lazy load LandingPage for code splitting
+const LandingPage = lazy(() => import('./components/LandingPage'));
+import { DotLoader } from './components/ui/dot-loader';
+import { Skeleton, AvatarSkeleton, TextSkeleton, CardSkeleton } from './components/ui/skeleton';
+import { Minimap } from './components/ui/minimap';
+import { ProgressiveImage } from './components/ui/progressive-image';
 import { motion, AnimatePresence } from 'motion/react';
-import { io, Socket } from 'socket.io-client';
 import Peer from 'simple-peer';
 import { 
   Monitor, 
@@ -40,19 +49,134 @@ import {
   Lock,
   Search,
   Settings as SettingsIcon,
-  Smile as SmileIcon
+  Smile as SmileIcon,
+  List,
+  GripVertical,
+  Sun,
+  Upload,
+  FileText,
+  Download,
+  Volume
 } from 'lucide-react';
-import { 
-  auth, db, googleProvider, signInWithPopup, onAuthStateChanged, signOut,
-  doc, setDoc, getDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc
-} from './firebase';
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  GoogleAuthProvider
+} from 'firebase/auth';
+import {
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  collection,
+  query,
+  where,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDocFromServer
+} from 'firebase/firestore';
+import {
+  ref,
+  set,
+  onValue,
+  update,
+  remove,
+  onDisconnect,
+  serverTimestamp,
+  get
+} from 'firebase/database';
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { auth, db, rtdb, storage, googleProvider } from './firebase';
 
 // --- Constants ---
 const OFFICE_WIDTH = 1200;
 const OFFICE_HEIGHT = 800;
-const AVATAR_RADIUS = 20;
-const SPEED = 6;
+const AVATAR_RADIUS = 30;
+const SPEED = 8;
 const VOICE_RADIUS = 150;
+
+const OFFICE_THEMES = {
+  modern: {
+    name: 'Modern',
+    background: '#ffffff',
+    gridColor: 'rgba(0,0,0,0.05)',
+    shadow: '0_60px_120px_rgba(0,0,0,0.5)'
+  },
+  dark: {
+    name: 'Dark',
+    background: '#1a1a1a',
+    gridColor: 'rgba(255,255,255,0.05)',
+    shadow: '0_60px_120px_rgba(0,0,0,0.8)'
+  },
+  ocean: {
+    name: 'Ocean',
+    background: '#e0f2fe',
+    gridColor: 'rgba(14,165,233,0.1)',
+    shadow: '0_60px_120px_rgba(14,165,233,0.3)'
+  },
+  forest: {
+    name: 'Forest',
+    background: '#f0fdf4',
+    gridColor: 'rgba(34,197,94,0.1)',
+    shadow: '0_60px_120px_rgba(34,197,94,0.3)'
+  },
+  sunset: {
+    name: 'Sunset',
+    background: '#fef3c7',
+    gridColor: 'rgba(245,158,11,0.1)',
+    shadow: '0_60px_120px_rgba(245,158,11,0.3)'
+  },
+  midnight: {
+    name: 'Midnight',
+    background: '#1e1b4b',
+    gridColor: 'rgba(139,92,246,0.1)',
+    shadow: '0_60px_120px_rgba(139,92,246,0.5)'
+  }
+};
+
+const EMOJIS = [
+  '👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👏', '🙌', '💪',
+  '✨', '💯', '🤔', '👀', '🚀', '💡', '🎯', '⭐', '💙', '👋'
+];
+
+const EmojiPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void; onClose: () => void }) => {
+  return (
+    <div className="grid grid-cols-5 gap-3">
+      {EMOJIS.map((emoji) => (
+        <button
+          key={emoji}
+          onClick={() => {
+            onSelect(emoji);
+            onClose();
+          }}
+          className="text-3xl hover:bg-slate-100 rounded-lg p-2 transition-colors w-12 h-12 flex items-center justify-center"
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// Simple markdown parser for chat messages
+const parseMarkdown = (text: string): string => {
+  // Bold: **text** or __text__
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
+  // Italic: *text* or _text_
+  text = text.replace(/\*(?!\*)(.*?)\*/g, '<em>$1</em>');
+  text = text.replace(/_(?!_)(.*?)_/g, '<em>$1</em>');
+  // Code: `text`
+  text = text.replace(/`(.*?)`/g, '<code class="bg-black/20 px-1 rounded">$1</code>');
+  // Strikethrough: ~~text~~
+  text = text.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  // Links: [text](url)
+  text = text.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-500 underline">$1</a>');
+  return text;
+};
 
 // --- Types ---
 interface Point { x: number; y: number; }
@@ -60,18 +184,6 @@ interface Rect { left: number; right: number; top: number; bottom: number; }
 interface Zone { name: string; bounds: Rect; }
 
 interface AvatarConfig {
-  avatarMode: 'default' | 'beta';
-  skinColor: string;
-  hairStyle: 'none' | 'short' | 'medium' | 'curly' | 'long' | 'buzz' | 'mohawk' | 'bob';
-  hairColor: string;
-  topType: 'tshirt' | 'hoodie' | 'shirt' | 'jacket' | 'sweater' | 'tanktop';
-  topColor: string;
-  bottomType: 'jeans' | 'shorts' | 'suit' | 'skirt' | 'joggers';
-  bottomColor: string;
-  bodyType: 'slim' | 'normal' | 'wide';
-  heightType: 'short' | 'normal' | 'tall';
-  accessory?: 'none' | 'glasses' | 'sunglasses' | 'hat' | 'headphones' | 'mask';
-  accessoryColor?: string;
   photoURL?: string;
 }
 
@@ -166,132 +278,947 @@ const DeviceNotSupported = ({ onBack }: { onBack: () => void }) => (
   </div>
 );
 
-const LandingPage = ({ onStart, user }: { onStart: () => void; user: any }) => {
-  const [showUnsupported, setShowUnsupported] = useState(false);
+const SideChatPanel = ({ 
+  messages, 
+  userName
+}: { 
+  messages: Array<{ id: string; text: string; sender: string; timestamp: number }>;
+  userName: string | null;
+}) => {
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleStart = () => {
-    if (isTouchDevice()) {
-      setShowUnsupported(true);
-    } else {
-      onStart();
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  return (
+    <div className="fixed right-8 top-24 bottom-32 w-80 bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl flex flex-col pointer-events-auto">
+      <div className="p-4 border-b border-white/10">
+        <h3 className="text-xs font-black text-white/60 uppercase tracking-wider">Chat</h3>
+      </div>
+      <div 
+        ref={chatContainerRef}
+        className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar"
+      >
+        {messages.length === 0 ? (
+          <p className="text-white/30 text-xs font-medium text-center">No messages yet</p>
+        ) : (
+          messages.map((msg) => (
+            <div 
+              key={msg.id}
+              className={`flex flex-col gap-1 ${msg.sender === userName ? 'items-end' : 'items-start'}`}
+            >
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">
+                {msg.sender}
+              </span>
+              <div className={`px-3 py-2 rounded-xl max-w-[80%] ${
+                msg.sender === userName 
+                  ? 'bg-white text-black' 
+                  : 'bg-white/10 text-white'
+              }`}>
+                <p 
+                  className="text-xs font-medium"
+                  dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.text) }}
+                />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+const StickyNotesPanel = ({ 
+  isOpen, 
+  onClose, 
+  notes,
+  onAddNote,
+  onUpdateNote,
+  onDeleteNote,
+  onUpdatePosition
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  notes: Array<{ id: string; text: string; x: number; y: number; color: string }>;
+  onAddNote: (note: Omit<{ id: string; text: string; x: number; y: number; color: string }, 'id'>) => void;
+  onUpdateNote: (id: string, text: string) => void;
+  onDeleteNote: (id: string) => void;
+  onUpdatePosition?: (id: string, x: number, y: number) => void;
+}) => {
+  const [newNoteText, setNewNoteText] = useState("");
+  const [selectedColor, setSelectedColor] = useState("#fef08a");
+  const [draggingNote, setDraggingNote] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  const colors = [
+    { name: "Yellow", value: "#fef08a" },
+    { name: "Pink", value: "#fbcfe8" },
+    { name: "Blue", value: "#bfdbfe" },
+    { name: "Green", value: "#bbf7d0" },
+    { name: "Orange", value: "#fed7aa" },
+  ];
+
+  const handleAddNote = () => {
+    if (newNoteText.trim()) {
+      onAddNote({
+        text: newNoteText.trim(),
+        x: 100,
+        y: 100,
+        color: selectedColor
+      });
+      setNewNoteText("");
     }
   };
 
-  if (showUnsupported) {
-    return <DeviceNotSupported onBack={() => setShowUnsupported(false)} />;
-  }
+  const handleDragStart = (e: React.MouseEvent, noteId: string, noteX: number, noteY: number) => {
+    setDraggingNote(noteId);
+    setDragOffset({
+      x: e.clientX - noteX,
+      y: e.clientY - noteY
+    });
+  };
+
+  const handleDrag = (e: React.MouseEvent) => {
+    if (draggingNote && onUpdatePosition) {
+      const newX = e.clientX - dragOffset.x;
+      const newY = e.clientY - dragOffset.y;
+      onUpdatePosition(draggingNote, newX, newY);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggingNote(null);
+  };
+
+  if (!isOpen) return null;
 
   return (
-    <div className="min-h-screen bg-black text-white overflow-hidden font-sans relative">
-      {/* Background Grid */}
-      <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:40px_40px]" />
-      
-      {/* Top Bar: Profile & Logout */}
-      {user && (
-        <div className="absolute top-8 right-8 z-[1100] flex items-center gap-4">
-          <div className="flex flex-col items-end">
-            <span className="text-white font-black text-sm tracking-tight">{user.displayName}</span>
-            <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{user.email}</span>
+    <div className="fixed inset-0 z-[5500] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-3xl h-[600px] overflow-hidden flex"
+      >
+        {/* Left Side: Note Creation */}
+        <div className="w-1/2 p-6 border-r border-slate-100 flex flex-col">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
+              <Edit3 className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-black">New Note</h2>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Leave a message</p>
+            </div>
           </div>
-          <div className="relative group">
-            <img 
-              src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} 
-              alt="profile" 
-              className="w-12 h-12 rounded-2xl border-2 border-white/10 shadow-xl group-hover:border-white/30 transition-all cursor-pointer"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute top-full right-0 mt-2 opacity-0 group-hover:opacity-100 transition-all pointer-events-none group-hover:pointer-events-auto">
-              <div className="bg-white rounded-2xl shadow-2xl p-2 min-w-[160px]">
-                <button 
-                  onClick={() => auth.signOut()}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors font-black text-xs uppercase tracking-widest"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Logout
-                </button>
+
+          <div className="space-y-4 flex-1">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Note Content</label>
+              <textarea
+                value={newNoteText}
+                onChange={(e) => setNewNoteText(e.target.value)}
+                placeholder="Write your note here..."
+                className="w-full h-32 bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all resize-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Note Color</label>
+              <div className="flex gap-2">
+                {colors.map((color) => (
+                  <button
+                    key={color.value}
+                    onClick={() => setSelectedColor(color.value)}
+                    className={`w-10 h-10 rounded-xl border-2 transition-all ${selectedColor === color.value ? 'border-black scale-110' : 'border-transparent hover:scale-105'}`}
+                    style={{ backgroundColor: color.value }}
+                    title={color.name}
+                  />
+                ))}
               </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Hero Section */}
-      <div className="relative z-10 max-w-7xl mx-auto px-6 pt-24 pb-32 flex flex-col items-center text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="inline-flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full border border-white/10 mb-8"
-        >
-          <Zap className="w-4 h-4 text-yellow-400" />
-          <span className="text-xs font-black uppercase tracking-widest">Next-Gen Virtual Office</span>
-        </motion.div>
-
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="text-6xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.9]"
-        >
-          WORK TOGETHER,<br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-white">ANYWHERE.</span>
-        </motion.h1>
-
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="text-xl text-slate-400 max-w-2xl mb-12 font-medium"
-        >
-          A spatial virtual office with proximity voice, meeting rooms, and real-time collaboration. 
-          Feel the presence of your team without the zoom fatigue.
-        </motion.p>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="flex flex-col sm:flex-row gap-4"
-        >
           <button
-            onClick={handleStart}
-            className="px-10 py-5 bg-white text-black rounded-2xl font-black text-xl shadow-[0_20px_50px_rgba(255,255,255,0.2)] hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
+            onClick={handleAddNote}
+            disabled={!newNoteText.trim()}
+            className="mt-6 w-full py-4 bg-black text-white rounded-2xl font-black text-sm hover:bg-slate-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Get Started
-            <ArrowRight className="w-6 h-6" />
+            <Plus className="w-4 h-4" />
+            Add Note
           </button>
-          <button className="px-10 py-5 bg-white/5 border border-white/10 rounded-2xl font-black text-xl hover:bg-white/10 transition-all">
-            View Demo
-          </button>
-        </motion.div>
-      </div>
-
-      {/* Features Grid */}
-      <div className="relative z-10 max-w-7xl mx-auto px-6 pb-32">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {[
-            { icon: <Mic className="w-8 h-8" />, title: "Proximity Voice", desc: "Hear people louder as you walk closer to them. Natural conversations." },
-            { icon: <Layout className="w-8 h-8" />, title: "Spatial Office", desc: "A beautiful 2D office layout with meeting rooms and focus zones." },
-            { icon: <Shield className="w-8 h-8" />, title: "Private Bubbles", desc: "Need a quick 1-on-1? Step into a private bubble for isolated audio." }
-          ].map((f, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 + (i * 0.1) }}
-              className="bg-white/5 p-8 rounded-[32px] border border-white/10 hover:bg-white/10 transition-all group"
-            >
-              <div className="mb-6 text-slate-400 group-hover:text-white transition-colors">{f.icon}</div>
-              <h3 className="text-2xl font-black mb-4">{f.title}</h3>
-              <p className="text-slate-400 font-medium leading-relaxed">{f.desc}</p>
-            </motion.div>
-          ))}
         </div>
-      </div>
 
-      {/* Footer */}
-      <div className="relative z-10 border-t border-white/10 py-12 text-center">
-        <p className="text-slate-500 font-bold text-sm uppercase tracking-widest">Built for the future of work</p>
-      </div>
+        {/* Right Side: Existing Notes */}
+        <div className="w-1/2 p-6 flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-black">Your Notes</h2>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{notes.length} notes</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+              <X className="w-6 h-6 text-slate-400" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto space-y-3">
+            {notes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                <MessageSquare className="w-12 h-12 mb-4" />
+                <p className="font-black text-sm">No notes yet</p>
+              </div>
+            ) : (
+              notes.map((note) => (
+                <div
+                  key={note.id}
+                  className={`p-4 rounded-2xl shadow-sm relative group cursor-move ${draggingNote === note.id ? 'shadow-lg scale-105' : ''}`}
+                  style={{ backgroundColor: note.color }}
+                  onMouseDown={(e) => handleDragStart(e, note.id, note.x, note.y)}
+                  onMouseMove={handleDrag}
+                  onMouseUp={handleDragEnd}
+                  onMouseLeave={handleDragEnd}
+                >
+                  <div className="flex items-start gap-2">
+                    <GripVertical className="w-4 h-4 text-black/30 mt-1" />
+                    <textarea
+                      value={note.text}
+                      onChange={(e) => onUpdateNote(note.id, e.target.value)}
+                      className="flex-1 bg-transparent border-none text-sm font-medium focus:outline-none resize-none"
+                      rows={3}
+                    />
+                  </div>
+                  <button
+                    onClick={() => onDeleteNote(note.id)}
+                    className="absolute top-2 right-2 p-1 bg-white/50 hover:bg-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                  >
+                    <Trash2 className="w-3 h-3 text-slate-600" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const ChatHistoryPanel = ({ 
+  isOpen, 
+  onClose, 
+  messages,
+  searchQuery,
+  onSearchChange,
+  onDeleteMessage
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  messages: Array<{ id: string; text: string; sender: string; timestamp: number }>;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  onDeleteMessage: (id: string) => void;
+}) => {
+  const filteredMessages = messages.filter(m => 
+    m.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.sender.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[5500] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl h-[600px] overflow-hidden flex flex-col"
+      >
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
+              <MessageSquare className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-black">Chat History</h2>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{filteredMessages.length} messages</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+            <X className="w-6 h-6 text-slate-400" />
+          </button>
+        </div>
+
+        <div className="p-4 border-b border-slate-100">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search messages..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {filteredMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+              <MessageSquare className="w-12 h-12 mb-4" />
+              <p className="font-black text-sm">No messages found</p>
+            </div>
+          ) : (
+            filteredMessages.map((msg) => (
+              <div key={msg.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-100 group">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white text-xs font-black">
+                      {msg.sender.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-black text-sm text-black">{msg.sender}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase">
+                        {new Date(msg.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onDeleteMessage(msg.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-100 rounded-lg transition-all"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-500" />
+                  </button>
+                </div>
+                <p className="text-sm text-slate-700 font-medium">{msg.text}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const FileDropZone = ({ 
+  isOpen, 
+  onClose, 
+  files,
+  onUpload,
+  onDelete,
+  isHost,
+  onEndMeeting
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  files: Array<{ id: string; name: string; url: string; size: number; uploadedBy: string; timestamp: number }>;
+  onUpload: (file: File) => void;
+  onDelete: (id: string, url: string) => void;
+  isHost: boolean;
+  onEndMeeting: () => void;
+}) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    droppedFiles.forEach(file => onUpload(file));
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    selectedFiles.forEach(file => onUpload(file));
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[5500] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-3xl h-[600px] overflow-hidden flex flex-col"
+      >
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
+              <Upload className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-black">Shared Files</h2>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{files.length} files</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {isHost && (
+              <button
+                onClick={onEndMeeting}
+                className="px-4 py-2 bg-rose-500 text-white rounded-xl font-black text-sm hover:bg-rose-600 transition-colors flex items-center gap-2"
+              >
+                <X className="w-4 h-4" />
+                End Meeting
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+              <X className="w-6 h-6 text-slate-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Drop Zone */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`p-6 border-b-2 border-dashed transition-all ${
+            isDragging ? 'border-black bg-black/5' : 'border-slate-200'
+          }`}
+        >
+          <div className="text-center">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-6 py-3 bg-black text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-colors flex items-center gap-2 mx-auto"
+            >
+              <Plus className="w-4 h-4" />
+              Upload Files
+            </button>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-2">or drag and drop files here</p>
+          </div>
+        </div>
+
+        {/* File List */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+          {files.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+              <Upload className="w-12 h-12 mb-4" />
+              <p className="font-black text-sm">No files shared yet</p>
+            </div>
+          ) : (
+            files.map((file) => (
+              <div key={file.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-100 group">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
+                      <FileText className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-black text-sm text-black">{file.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">{formatFileSize(file.size)}</p>
+                        <span className="text-slate-300">•</span>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">{file.uploadedBy}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={file.url}
+                      download={file.name}
+                      className="p-2 hover:bg-slate-200 rounded-lg transition-colors"
+                      title="Download"
+                    >
+                      <Download className="w-4 h-4 text-slate-600" />
+                    </a>
+                    <button
+                      onClick={() => onDelete(file.id, file.url)}
+                      className="p-2 hover:bg-rose-100 rounded-lg transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-500" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const QuickStartWizard = ({ 
+  isOpen, 
+  onClose, 
+  onComplete,
+  user,
+  onJoin
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onComplete: (name: string, room: string, avatar?: AvatarConfig, status?: string, password?: string) => void;
+  user: any;
+  onJoin: (name: string, room: string, avatar?: AvatarConfig, status?: string, password?: string) => void;
+}) => {
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState(user?.displayName || "");
+  const [room, setRoom] = useState("");
+  const [password, setPassword] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
+  const [selectedStatus, setSelectedStatus] = useState("available");
+  const [tempAvatar, setTempAvatar] = useState<AvatarConfig | null>(null);
+  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
+
+  useEffect(() => {
+    const q = query(collection(db, 'rooms'), where('isPublic', '==', true));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setAvailableRooms(snapshot.docs.map(d => d.data()));
+    });
+    return () => unsub();
+  }, []);
+
+  const steps = [
+    { number: 1, title: "Your Identity", description: "Set your display name and customize your avatar" },
+    { number: 2, title: "Choose a Room", description: "Join an existing room or create your own workspace" },
+    { number: 3, title: "Set Your Status", description: "Let others know if you're available, busy, or focused" },
+  ];
+
+  const handleNext = () => {
+    if (step < 3) setStep(step + 1);
+  };
+
+  const handlePrevious = () => {
+    if (step > 1) setStep(step - 1);
+  };
+
+  const handleComplete = async () => {
+    if (isCreating) {
+      let currentUser = user;
+      if (!currentUser) {
+        try {
+          const result = await signInWithPopup(auth, googleProvider);
+          currentUser = result.user;
+        } catch (err) {
+          console.error("Auth failed", err);
+          return;
+        }
+      }
+
+      const roomData = {
+        id: room,
+        name: room,
+        password: password || "",
+        isPublic,
+        createdBy: currentUser.uid,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(doc(db, 'rooms', room), roomData);
+    }
+
+    if (password) {
+      const roomDoc = await getDoc(doc(db, 'rooms', room));
+      if (roomDoc.exists() && roomDoc.data().password && roomDoc.data().password !== password) {
+        alert("Incorrect room password!");
+        return;
+      }
+    }
+
+    onComplete(name, room, tempAvatar || undefined, selectedStatus, password);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/90 backdrop-blur-2xl p-4 font-sans">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl overflow-hidden h-[700px] flex"
+      >
+        {/* Left Side: Progress & Branding */}
+        <div className="w-1/3 bg-slate-900 p-8 text-white flex flex-col">
+          <div className="flex items-center gap-3 mb-12">
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
+              <Zap className="w-5 h-5 text-black" />
+            </div>
+            <span className="text-xl font-black tracking-tight">Quick Start</span>
+          </div>
+
+          <div className="flex-1">
+            {steps.map((s) => (
+              <div key={s.number} className="mb-8">
+                <div className={`flex items-center gap-4 mb-2 ${s.number === step ? 'opacity-100' : 'opacity-40'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm ${s.number === step ? 'bg-white text-black' : 'bg-white/20 text-white'}`}>
+                    {s.number}
+                  </div>
+                  <span className="font-bold">{s.title}</span>
+                </div>
+                <p className="text-slate-400 text-xs ml-12">{s.description}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-slate-500 text-xs">
+            <p className="font-black uppercase tracking-widest mb-2">Step {step} of {steps.length}</p>
+            <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+              <motion.div 
+                className="h-full bg-white transition-all duration-500"
+                style={{ width: `${(step / steps.length) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side: Form Content */}
+        <div className="flex-1 p-8 overflow-y-auto">
+          {step === 1 && (
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+              <h2 className="text-2xl font-black text-black mb-2">Your Identity</h2>
+              <p className="text-slate-500 mb-8">Customize how you appear to others in the workspace</p>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Display Name</label>
+                  <input 
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Enter your name"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Avatar</label>
+                  <button 
+                    onClick={() => setTempAvatar({
+                      photoURL: user?.photoURL
+                    })}
+                    className="w-full bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-8 hover:border-black/20 transition-all group"
+                  >
+                    <div className="flex items-center justify-center gap-3">
+                      <SmileIcon className="w-8 h-8 text-slate-400 group-hover:text-black transition-colors" />
+                      <span className="font-black text-slate-400 group-hover:text-black transition-colors">Customize Avatar</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 2 && (
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+              <h2 className="text-2xl font-black text-black mb-2">Choose a Room</h2>
+              <p className="text-slate-500 mb-8">Join an existing workspace or create your own</p>
+
+              <div className="flex gap-3 mb-6">
+                <button 
+                  onClick={() => setIsCreating(false)}
+                  className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${!isCreating ? 'bg-black text-white shadow-xl' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                >
+                  Join Room
+                </button>
+                <button 
+                  onClick={() => setIsCreating(true)}
+                  className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isCreating ? 'bg-black text-white shadow-xl' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                >
+                  Create Room
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Room Name / ID</label>
+                  <input 
+                    type="text"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value)}
+                    placeholder={isCreating ? "Create a new room" : "Enter room ID"}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Password (Optional)</label>
+                  <input 
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Room password"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-black text-sm focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
+                  />
+                </div>
+
+                {isCreating && (
+                  <div className="flex items-center gap-2 p-4 bg-slate-50 rounded-2xl">
+                    <input 
+                      type="checkbox" 
+                      checked={isPublic} 
+                      onChange={(e) => setIsPublic(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className="text-xs font-bold text-slate-600">List this room publicly</span>
+                  </div>
+                )}
+
+                {!isCreating && availableRooms.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Public Rooms</label>
+                    <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                      {availableRooms.map(r => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => setRoom(r.id)}
+                          className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-left hover:bg-slate-100 transition-all"
+                        >
+                          <p className="text-xs font-black text-slate-700 truncate">{r.name}</p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <Users className="w-3 h-3 text-slate-400" />
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">Active</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {step === 3 && (
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+              <h2 className="text-2xl font-black text-black mb-2">Set Your Status</h2>
+              <p className="text-slate-500 mb-8">Let your team know your availability</p>
+
+              <div className="space-y-4">
+                {[
+                  { value: 'available', label: 'Available', icon: '🟢', desc: 'Free to chat and collaborate' },
+                  { value: 'busy', label: 'Busy', icon: '🟡', desc: 'In a meeting or focused work' },
+                  { value: 'focus', label: 'Focus Mode', icon: '🔴', desc: 'Deep work, please disturb only if urgent' }
+                ].map((status) => (
+                  <button
+                    key={status.value}
+                    onClick={() => setSelectedStatus(status.value)}
+                    className={`w-full p-4 rounded-2xl border-2 transition-all text-left ${selectedStatus === status.value ? 'border-black bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{status.icon}</span>
+                      <div>
+                        <p className="font-black text-sm">{status.label}</p>
+                        <p className="text-xs text-slate-500">{status.desc}</p>
+                      </div>
+                      {selectedStatus === status.value && (
+                        <Check className="w-5 h-5 ml-auto text-black" />
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Navigation */}
+          <div className="flex items-center gap-3 mt-8 pt-6 border-t border-slate-100">
+            {step > 1 && (
+              <button
+                onClick={handlePrevious}
+                className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-2xl font-black text-sm hover:bg-slate-200 transition-all"
+              >
+                Previous
+              </button>
+            )}
+            {step < 3 ? (
+              <button
+                onClick={handleNext}
+                disabled={step === 1 && !name}
+                className="flex-1 py-4 bg-black text-white rounded-2xl font-black text-sm hover:bg-slate-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                Next
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={handleComplete}
+                disabled={!name || !room}
+                className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-black text-sm hover:bg-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                Enter Workspace
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const TutorialModal = ({ 
+  isOpen, 
+  onClose, 
+  onComplete,
+  currentStep,
+  onNext,
+  onPrevious,
+  onSkip
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onComplete: () => void;
+  currentStep: number;
+  onNext: () => void;
+  onPrevious: () => void;
+  onSkip: () => void;
+}) => {
+  const steps = [
+    {
+      title: "Welcome to WorkSpace!",
+      description: "This is your virtual office where you can collaborate with your team in real-time. Let's take a quick tour.",
+      highlight: null,
+      icon: <Zap className="w-12 h-12" />
+    },
+    {
+      title: "Navigate with WASD",
+      description: "Use W, A, S, D or arrow keys to move your avatar around the office. Walk up to colleagues to start a conversation!",
+      highlight: null,
+      icon: <Layout className="w-12 h-12" />
+    },
+    {
+      title: "Proximity Voice",
+      description: "Hold SPACE to speak. Your voice gets louder as you get closer to others. Step into private bubbles for 1-on-1 conversations.",
+      highlight: "mic",
+      icon: <Mic className="w-12 h-12" />
+    },
+    {
+      title: "Meeting Rooms",
+      description: "The top area has conference rooms where you can have private team meetings. Audio is isolated within each room.",
+      highlight: "rooms",
+      icon: <Users className="w-12 h-12" />
+    },
+    {
+      title: "Chat & Emotes",
+      description: "Type messages in the chat box or use emotes to express yourself. Press 1-8 for quick emotes!",
+      highlight: "chat",
+      icon: <MessageSquare className="w-12 h-12" />
+    },
+    {
+      title: "Status & Privacy",
+      description: "Set your status (Available, Busy, Focus) and toggle private mode for isolated conversations.",
+      highlight: "status",
+      icon: <ShieldCheck className="w-12 h-12" />
+    },
+    {
+      title: "Daily Tasks",
+      description: "Track your daily tasks in the left panel. Press 'E' to auto-complete tasks in your current zone.",
+      highlight: "tasks",
+      icon: <CheckCircle2 className="w-12 h-12" />
+    },
+    {
+      title: "You're Ready!",
+      description: "You're all set to collaborate with your team. Explore the office and start working together!",
+      highlight: null,
+      icon: <ArrowRight className="w-12 h-12" />
+    }
+  ];
+
+  const step = steps[currentStep];
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[6000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden"
+      >
+        {/* Progress Bar */}
+        <div className="h-1 bg-slate-100">
+          <motion.div 
+            className="h-full bg-black transition-all duration-500"
+            style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+          />
+        </div>
+
+        <div className="p-8">
+          {/* Icon */}
+          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center text-white mb-6">
+            {step.icon}
+          </div>
+
+          {/* Content */}
+          <h2 className="text-2xl font-black text-black mb-3">{step.title}</h2>
+          <p className="text-slate-600 font-medium leading-relaxed mb-8">{step.description}</p>
+
+          {/* Step Indicator */}
+          <div className="flex items-center gap-2 mb-8">
+            {steps.map((_, i) => (
+              <div
+                key={i}
+                className={`flex-1 h-1 rounded-full transition-all ${i === currentStep ? 'bg-black' : i < currentStep ? 'bg-emerald-500' : 'bg-slate-200'}`}
+              />
+            ))}
+          </div>
+
+          {/* Navigation */}
+          <div className="flex items-center gap-3">
+            {currentStep > 0 && (
+              <button
+                onClick={onPrevious}
+                className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-2xl font-black text-sm hover:bg-slate-200 transition-all"
+              >
+                Previous
+              </button>
+            )}
+            {currentStep < steps.length - 1 ? (
+              <button
+                onClick={onNext}
+                className="flex-1 py-4 bg-black text-white rounded-2xl font-black text-sm hover:bg-slate-900 transition-all flex items-center justify-center gap-2"
+              >
+                Next
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={onComplete}
+                className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-black text-sm hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
+              >
+                Get Started
+                <Check className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={onSkip}
+              className="px-6 py-4 text-slate-400 font-black text-sm hover:text-slate-600 transition-all"
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 };
@@ -301,13 +1228,25 @@ const SettingsModal = ({
   onClose, 
   userName, 
   roomId, 
-  onLogout 
+  onLogout,
+  highContrastMode,
+  onToggleHighContrast,
+  textSize,
+  onSetTextSize,
+  selectedTheme,
+  onSetTheme
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   userName: string; 
   roomId: string;
   onLogout: () => void;
+  highContrastMode: boolean;
+  onToggleHighContrast: () => void;
+  textSize: 'small' | 'medium' | 'large';
+  onSetTextSize: (size: 'small' | 'medium' | 'large') => void;
+  selectedTheme: keyof typeof OFFICE_THEMES;
+  onSetTheme: (theme: keyof typeof OFFICE_THEMES) => void;
 }) => {
   return (
     <AnimatePresence>
@@ -358,6 +1297,71 @@ const SettingsModal = ({
                 </div>
               </section>
 
+              <section>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Office Theme</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.keys(OFFICE_THEMES) as Array<keyof typeof OFFICE_THEMES>).map((theme) => (
+                    <button
+                      key={theme}
+                      onClick={() => onSetTheme(theme)}
+                      className={`p-3 rounded-xl border-2 transition-all ${
+                        selectedTheme === theme 
+                          ? 'border-black bg-black text-white' 
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                      aria-label={`Select ${OFFICE_THEMES[theme].name} theme`}
+                    >
+                      <div 
+                        className="w-8 h-8 rounded-lg mx-auto mb-2"
+                        style={{ backgroundColor: OFFICE_THEMES[theme].background }}
+                      />
+                      <p className="text-xs font-black uppercase tracking-wider">{OFFICE_THEMES[theme].name}</p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Accessibility</label>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div>
+                      <p className="font-black text-black">High Contrast Mode</p>
+                      <p className="text-xs text-slate-500 font-bold">Increase visibility for better readability</p>
+                    </div>
+                    <button 
+                      onClick={onToggleHighContrast}
+                      className={`w-14 h-8 rounded-full p-1 transition-all ${highContrastMode ? 'bg-black' : 'bg-slate-300'}`}
+                      aria-label="Toggle high contrast mode"
+                    >
+                      <motion.div 
+                        animate={{ x: highContrastMode ? 24 : 0 }}
+                        className="w-6 h-6 bg-white rounded-full shadow-md"
+                      />
+                    </button>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="font-black text-black mb-3">Text Size</p>
+                    <div className="flex gap-2">
+                      {(['small', 'medium', 'large'] as Array<'small' | 'medium' | 'large'>).map((size) => (
+                        <button
+                          key={size}
+                          onClick={() => onSetTextSize(size)}
+                          className={`flex-1 py-2 px-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all ${
+                            textSize === size 
+                              ? 'bg-black text-white' 
+                              : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'
+                          }`}
+                          aria-label={`Set text size to ${size}`}
+                        >
+                          {size.charAt(0).toUpperCase() + size.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
               <div className="pt-4 space-y-3">
                 <button 
                   onClick={onLogout}
@@ -381,390 +1385,64 @@ const SettingsModal = ({
   );
 };
 
-const PixelAvatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, name }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean; name?: string }) => {
-  const P = 4; // Pixel size
-  
+const PixelAvatar = React.memo(({ config, isWalking, isSpeaking, status, name, isLocal }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; status?: string; isLocal?: boolean; name?: string }) => {
   const statusColors: Record<string, string> = {
     available: '#22c55e',
     busy: '#ef4444',
     focus: '#8b5cf6'
   };
 
-  // Helper for pixel blocks
-  const Pixel = ({ x, y, w, h, color, className = "", z = 0 }: { x: number; y: number; w: number; h: number; color: string; className?: string; z?: number }) => (
-    <div 
-      className={`absolute ${className}`}
-      style={{ 
-        left: x * P, 
-        top: y * P, 
-        width: w * P, 
-        height: h * P, 
-        backgroundColor: color,
-        imageRendering: 'pixelated',
-        zIndex: z
-      }} 
-    />
-  );
+  const profileImage = config.photoURL || '/image.png';
 
   return (
-    <div className="relative flex flex-col items-center justify-center" style={{ width: 12 * P, height: 20 * P }}>
-      {/* Shadow - Layer 0 */}
-      <div className="absolute bottom-0 w-10 h-3 bg-black/20 rounded-[100%] blur-[1px] z-0" />
+    <div className="relative" style={{ width: 48, height: 48 }}>
+      {/* Shadow */}
+      <div 
+        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-2 bg-black/20 rounded-full blur-sm"
+        style={{ transform: 'translateX(-50%)' }}
+      />
 
-      <div className={`relative w-full h-full transition-transform duration-200 ${isWalking ? 'animate-bounce' : ''}`} style={{ transformStyle: 'preserve-3d' }}>
-        {/* Legs & Shoes - Layer 10 */}
-        <Pixel x={3} y={15} w={2} h={4} color={config.bottomColor} z={10} />
-        <Pixel x={7} y={15} w={2} h={4} color={config.bottomColor} z={10} />
-        {/* Shoes */}
-        <Pixel x={2} y={18} w={3} h={2} color="#1e293b" z={11} />
-        <Pixel x={7} y={18} w={3} h={2} color="#1e293b" z={11} />
-
-        {/* Torso - Layer 20 */}
-        <Pixel x={2} y={9} w={8} h={7} color={config.topColor} z={20} />
-        {/* Striped Shirt Detail */}
-        {config.topType === 'shirt' && (
-          <>
-            <Pixel x={2} y={11} w={8} h={1} color="rgba(255,255,255,0.2)" z={21} />
-            <Pixel x={2} y={13} w={8} h={1} color="rgba(255,255,255,0.2)" z={21} />
-          </>
-        )}
-        {/* Arms */}
-        <Pixel x={0} y={9} w={2} h={6} color={config.topColor} z={20} />
-        <Pixel x={10} y={9} w={2} h={6} color={config.topColor} z={20} />
-        {/* Hands */}
-        <Pixel x={0} y={14} w={2} h={2} color={config.skinColor} z={20} />
-        <Pixel x={10} y={14} w={2} h={2} color={config.skinColor} z={20} />
-
-        {/* Head - Layer 30 */}
-        <Pixel x={2} y={1} w={8} h={8} color={config.skinColor} z={30} />
-        {/* Face Shading */}
-        <Pixel x={2} y={7} w={8} h={2} color="rgba(0,0,0,0.08)" z={31} />
-        {/* Eyes */}
-        <Pixel x={3} y={4} w={1} h={1} color="#000" z={32} />
-        <Pixel x={8} y={4} w={1} h={1} color="#000" z={32} />
-
-        {/* Hair - Layer 40 */}
-        {config.hairStyle !== 'none' && (
-          <>
-            {/* Hair sits above head */}
-            <Pixel x={2} y={0} w={8} h={3} color={config.hairColor} z={40} />
-            {config.hairStyle === 'long' && (
-              <>
-                <Pixel x={1} y={1} w={1} h={10} color={config.hairColor} z={40} />
-                <Pixel x={10} y={1} w={1} h={10} color={config.hairColor} z={40} />
-              </>
-            )}
-            {config.hairStyle === 'curly' && (
-              <>
-                <Pixel x={1} y={1} w={1} h={4} color={config.hairColor} z={40} />
-                <Pixel x={10} y={1} w={1} h={4} color={config.hairColor} z={40} />
-                <Pixel x={2} y={-1} w={2} h={1} color={config.hairColor} z={40} />
-                <Pixel x={8} y={-1} w={2} h={1} color={config.hairColor} z={40} />
-              </>
-            )}
-          </>
-        )}
-
-        {/* Accessory / Hat - Layer 50 */}
-        {config.accessory === 'hat' && (
-          <>
-            <Pixel x={1} y={0} w={10} h={2} color={config.accessoryColor || '#000'} z={50} />
-            <Pixel x={1} y={2} w={12} h={1} color={config.accessoryColor || '#000'} z={50} />
-          </>
-        )}
-        {config.accessory === 'glasses' && (
-          <>
-            <Pixel x={3} y={4} w={2} h={1} color="rgba(0,0,0,0.5)" z={50} />
-            <Pixel x={7} y={4} w={2} h={1} color="rgba(0,0,0,0.5)" z={50} />
-            <Pixel x={5} y={4} w={2} h={0.5} color="#000" z={50} />
-          </>
-        )}
+      {/* Circular Avatar with Border */}
+      <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-white/50 shadow-lg bg-white/10 backdrop-blur-sm">
+        <img 
+          src={profileImage}
+          alt={name || 'Avatar'}
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.src = '/image.png';
+          }}
+        />
       </div>
 
-      {/* UI Identity Layer - Layer 100 */}
-      <div className="absolute -top-14 flex flex-col items-center gap-1 z-[100]">
-        <AnimatePresence>
-          {message && (
-            <motion.div 
-              initial={{ opacity: 0, y: 5 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              exit={{ opacity: 0 }}
-              className="bg-black text-white text-[10px] px-2 py-1 rounded-md font-bold whitespace-nowrap mb-1 border border-white/20"
-            >
-              {message}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <AnimatePresence>
-        {emote && (
-          <motion.div 
-            initial={{ scale: 0, y: 0 }} 
-            animate={{ scale: 1.5, y: -40 }} 
-            exit={{ scale: 0, opacity: 0 }} 
-            className="absolute z-[1200] text-2xl pointer-events-none"
-          >
-            {emote}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Status Indicator */}
+      {status && (
+        <div 
+          className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-black"
+          style={{ backgroundColor: statusColors[status] || statusColors.available }}
+        />
+      )}
     </div>
   );
 });
 
-const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, status, isLocal, name }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; message?: string; emote?: string; status?: string; isLocal?: boolean; name?: string }) => {
-  if (config.avatarMode === 'beta') {
-    return <PixelAvatar config={config} isWalking={isWalking} isSpeaking={isSpeaking} message={message} emote={emote} status={status} isLocal={isLocal} name={name} />;
-  }
-
-  const bodyWidth = config.bodyType === 'slim' ? 24 : config.bodyType === 'wide' ? 36 : 30;
-  const shoulderWidth = config.bodyType === 'slim' ? 28 : config.bodyType === 'wide' ? 44 : 36;
-  const totalHeight = config.heightType === 'short' ? 70 : config.heightType === 'tall' ? 90 : 80;
-  const legHeight = config.heightType === 'short' ? 18 : config.heightType === 'tall' ? 30 : 24;
-  
+const Avatar = React.memo(({ config, isWalking, isSpeaking, status, isLocal, name, audioLevel = 0, isSitting, sittingPose }: { config: AvatarConfig; isWalking: boolean; isSpeaking: boolean; status?: string; isLocal?: boolean; name?: string; audioLevel?: number; isSitting?: boolean; sittingPose?: 'chair' | 'desk' | null }) => {
   const statusColors: Record<string, string> = {
     available: '#22c55e',
     busy: '#ef4444',
     focus: '#8b5cf6'
   };
 
-  // Hair styles rendering
-  const renderHair = () => {
-    if (config.hairStyle === 'none') return null;
-    
-    const baseStyle = { backgroundColor: config.hairColor };
-    const highlightColor = `${config.hairColor}cc`;
-    const shadowColor = `${config.hairColor}33`;
-    
-    switch (config.hairStyle) {
-      case 'short':
-        return (
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-[110%] h-[65%] z-30">
-            {/* Main volume with slight asymmetry */}
-            <div className="absolute inset-0 rounded-t-[100%] shadow-sm overflow-hidden" style={baseStyle}>
-              {/* Subtle shine/highlight */}
-              <div className="absolute top-1 left-[20%] w-[60%] h-1.5 bg-white/15 rounded-full blur-[1.5px]" />
-              {/* Depth shadow */}
-              <div className="absolute bottom-0 left-0 w-full h-1/3 bg-black/10" />
-            </div>
-            {/* Spiky texture on top */}
-            <div className="absolute -top-1 left-1/4 w-3 h-3 rotate-45 rounded-sm" style={baseStyle} />
-            <div className="absolute -top-0.5 left-1/2 w-3 h-3 rotate-[30deg] rounded-sm" style={baseStyle} />
-            <div className="absolute -top-1 right-1/4 w-3 h-3 rotate-[60deg] rounded-sm" style={baseStyle} />
-            {/* Fringe pieces */}
-            <div className="absolute -bottom-1.5 left-0 w-full h-3 flex justify-between px-1">
-              <div className="w-2.5 h-3 rounded-full -mt-1 rotate-6" style={baseStyle} />
-              <div className="w-2 h-3 rounded-full -mt-0.5" style={baseStyle} />
-              <div className="w-2.5 h-3 rounded-full -mt-1 -rotate-6" style={baseStyle} />
-            </div>
-          </div>
-        );
-      case 'medium':
-        return (
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-[120%] h-[90%] z-30">
-            {/* Main volume */}
-            <div className="absolute top-0 left-0 w-full h-[85%] rounded-t-[24px] shadow-md overflow-hidden" style={baseStyle}>
-              {/* Glossy highlight */}
-              <div className="absolute top-1.5 left-[15%] w-[70%] h-2 bg-white/20 rounded-full blur-[2px]" />
-              {/* Internal shadow */}
-              <div className="absolute bottom-0 left-0 w-full h-1/4 bg-black/15" />
-            </div>
-            {/* Side layers */}
-            <div className="absolute top-3 -left-1.5 w-4 h-10 rounded-full rotate-[10deg] shadow-sm" style={baseStyle} />
-            <div className="absolute top-3 -right-1.5 w-4 h-10 rounded-full -rotate-[10deg] shadow-sm" style={baseStyle} />
-            {/* Layered bangs */}
-            <div className="absolute top-1 left-1/2 -translate-x-1/2 w-full h-5 flex justify-center items-start gap-0.5">
-              <div className="w-3 h-6 rounded-full rotate-[15deg] -mt-1" style={baseStyle} />
-              <div className="w-2.5 h-7 rounded-full rotate-[5deg] -mt-0.5" style={baseStyle} />
-              <div className="w-3 h-6 rounded-full -rotate-[15deg] -mt-1" style={baseStyle} />
-            </div>
-          </div>
-        );
-      case 'curly':
-        return (
-          <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[135%] h-[120%] z-30 flex flex-wrap justify-center content-start gap-0.5">
-            {[...Array(16)].map((_, i) => (
-              <div 
-                key={i} 
-                className="w-4 h-4 rounded-full shadow-md relative overflow-hidden" 
-                style={{ 
-                  ...baseStyle,
-                  marginTop: i < 4 ? 0 : -6,
-                  marginLeft: i % 4 === 0 ? 0 : -3,
-                  zIndex: 20 - i
-                }}
-              >
-                {/* Individual curl highlight */}
-                <div className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white/25 rounded-full blur-[0.5px]" />
-                {/* Individual curl shadow */}
-                <div className="absolute bottom-0 right-0 w-full h-1/2 bg-black/10 rounded-full" />
-              </div>
-            ))}
-          </div>
-        );
-      case 'long':
-        return (
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-[125%] h-[190%] z-30">
-            {/* Crown volume */}
-            <div className="absolute top-0 left-0 w-full h-8 rounded-t-[28px] shadow-lg overflow-hidden" style={baseStyle}>
-              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-[60%] h-1 bg-white/15 rounded-full blur-[1px]" />
-            </div>
-            {/* Flowing front strands */}
-            <div className="absolute top-5 -left-2 w-5 h-32 rounded-full origin-top rotate-[4deg] shadow-sm" style={baseStyle}>
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/5 to-black/25 rounded-full" />
-              {/* Strand highlight */}
-              <div className="absolute top-4 left-1 w-1.5 h-12 bg-white/10 rounded-full blur-[1px]" />
-            </div>
-            <div className="absolute top-5 -right-2 w-5 h-32 rounded-full origin-top -rotate-[4deg] shadow-sm" style={baseStyle}>
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/5 to-black/25 rounded-full" />
-              {/* Strand highlight */}
-              <div className="absolute top-4 right-1 w-1.5 h-12 bg-white/10 rounded-full blur-[1px]" />
-            </div>
-            {/* Middle strands */}
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-[80%] h-full flex justify-between px-2 pointer-events-none">
-              <div className="w-1.5 h-20 rounded-full bg-black/10 blur-[0.5px]" />
-              <div className="w-1.5 h-20 rounded-full bg-black/10 blur-[0.5px]" />
-            </div>
-          </div>
-        );
-      case 'buzz':
-        return (
-          <div className="absolute inset-[-2px] z-30 rounded-full overflow-hidden opacity-50 mix-blend-multiply">
-            <div className="absolute inset-0" style={baseStyle} />
-            {/* Grainy texture */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,black_100%)] opacity-30" />
-            <div className="absolute inset-0 bg-[repeating-radial-gradient(circle,black,black_1.5px,transparent_1.5px,transparent_3px)] opacity-20" />
-            {/* Hairline shadow */}
-            <div className="absolute inset-0 border-[3px] border-black/20 rounded-full blur-[1px]" />
-          </div>
-        );
-      case 'mohawk':
-        return (
-          <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-5 h-[120%] z-30 flex flex-col items-center">
-            {[...Array(6)].map((_, i) => (
-              <div 
-                key={i} 
-                className="w-full h-5 rounded-full -mb-2.5 shadow-md relative group" 
-                style={{ 
-                  ...baseStyle,
-                  transform: `scaleX(${1.3 - i * 0.12}) translateY(${i * 1}px)`,
-                  zIndex: 15 - i
-                }}
-              >
-                {/* Spike highlight */}
-                <div className="absolute top-1 left-1.5 w-1.5 h-3 bg-white/20 rounded-full blur-[0.5px]" />
-                {/* Spike shadow */}
-                <div className="absolute bottom-0 right-0 w-full h-1/2 bg-black/15 rounded-full" />
-              </div>
-            ))}
-          </div>
-        );
-      case 'bob':
-        return (
-          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-[130%] h-[130%] z-30">
-            {/* Main sleek volume */}
-            <div className="absolute inset-0 rounded-t-[32px] rounded-b-xl shadow-xl overflow-hidden" style={baseStyle}>
-              {/* High-gloss shine */}
-              <div className="absolute top-2.5 left-0 w-full h-3 bg-white/15 blur-[3px] -rotate-2" />
-              {/* Depth gradient */}
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20" />
-              {/* Bangs definition */}
-              <div className="absolute top-7 left-0 w-full h-[2px] bg-black/15 blur-[0.5px]" />
-            </div>
-            {/* Curved side ends */}
-            <div className="absolute bottom-[-2px] -left-1.5 w-5 h-10 rounded-full shadow-sm" style={baseStyle} />
-            <div className="absolute bottom-[-2px] -right-1.5 w-5 h-10 rounded-full shadow-sm" style={baseStyle} />
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const renderBackHair = () => {
-    const baseStyle = { backgroundColor: config.hairColor };
-    
-    // Most styles benefit from a little back volume for realism
-    if (config.hairStyle === 'none' || config.hairStyle === 'buzz') return null;
-
-    if (config.hairStyle === 'long') {
-      return (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-[140%] h-[240%] z-10 rounded-t-[32px] shadow-inner" style={baseStyle}>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-transparent rounded-t-[32px]" />
-          {/* Back strands texture */}
-          <div className="absolute inset-0 opacity-10 bg-[repeating-linear-gradient(90deg,transparent,transparent_4px,black_4px,black_5px)]" />
-        </div>
-      );
-    }
-
-    if (config.hairStyle === 'bob') {
-      return (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-[135%] h-[120%] z-10 rounded-t-[32px] rounded-b-2xl shadow-inner" style={baseStyle}>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-transparent rounded-t-[32px] rounded-b-2xl" />
-        </div>
-      );
-    }
-
-    // Default back volume for other styles
-    return (
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 w-[105%] h-[80%] z-10 rounded-t-full opacity-80" style={baseStyle}>
-        <div className="absolute inset-0 bg-black/20 rounded-t-full" />
-      </div>
-    );
-  };
-
-  const renderAccessory = () => {
-    if (!config.accessory || config.accessory === 'none') return null;
-    const color = config.accessoryColor || '#000';
-
-    switch (config.accessory) {
-      case 'glasses':
-        return (
-          <div className="absolute top-[35%] left-1/2 -translate-x-1/2 w-[90%] h-2 z-50 flex items-center justify-center gap-1">
-            <div className="w-3 h-2 border-2 border-black/80 rounded-sm" />
-            <div className="w-1 h-0.5 bg-black/80" />
-            <div className="w-3 h-2 border-2 border-black/80 rounded-sm" />
-          </div>
-        );
-      case 'sunglasses':
-        return (
-          <div className="absolute top-[35%] left-1/2 -translate-x-1/2 w-[90%] h-2 z-50 flex items-center justify-center gap-1">
-            <div className="w-3 h-2 bg-black rounded-sm" />
-            <div className="w-1 h-0.5 bg-black" />
-            <div className="w-3 h-2 bg-black rounded-sm" />
-          </div>
-        );
-      case 'hat':
-        return (
-          <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[110%] h-6 z-50">
-            <div className="w-full h-4 rounded-t-full" style={{ backgroundColor: color }} />
-            <div className="w-[140%] h-1.5 bg-black/20 absolute bottom-0 -left-[20%] rounded-full" style={{ backgroundColor: color }} />
-          </div>
-        );
-      case 'headphones':
-        return (
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-[130%] h-full z-50 pointer-events-none">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 border-t-4 border-slate-800 rounded-t-full" />
-            <div className="absolute top-2 -left-1 w-3 h-6 bg-slate-800 rounded-full" />
-            <div className="absolute top-2 -right-1 w-3 h-6 bg-slate-800 rounded-full" />
-          </div>
-        );
-      case 'mask':
-        return (
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[80%] h-1/3 bg-white/90 border border-slate-200 rounded-b-full z-50" />
-        );
-      default:
-        return null;
-    }
-  };
-
   return (
-    <div 
-      className="relative flex flex-col items-center justify-center" 
+    <motion.div 
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      transition={{ type: "spring" as const, damping: 20, stiffness: 300 }}
+      className={`relative ${isWalking ? 'avatar-walking' : ''} ${isSitting ? 'avatar-sitting' : ''}`}
       style={{ 
-        width: 60, 
-        height: totalHeight, 
+        width: 52, 
+        height: 52,
+        transform: isSitting ? 'translateY(8px)' : undefined
       }}
     >
       <style>{`
@@ -773,185 +1451,97 @@ const Avatar = React.memo(({ config, isWalking, isSpeaking, message, emote, stat
           25% { transform: translateY(-4px) rotate(-2deg); }
           75% { transform: translateY(-4px) rotate(2deg); }
         }
-        .avatar-container {
-          animation: ${isWalking ? 'avatar-walk 0.6s infinite ease-in-out' : 'none'};
+        .avatar-walking {
+          animation: avatar-walk 0.6s infinite ease-in-out;
           transform-origin: bottom center;
+        }
+        @keyframes sound-wave {
+          0% { transform: scale(1); opacity: 0.5; }
+          100% { transform: scale(2.5); opacity: 0; }
+        }
+        .sound-wave {
+          animation: sound-wave 1.5s infinite ease-out;
+        }
+        .sound-wave-delay-1 {
+          animation-delay: 0.3s;
+        }
+        .sound-wave-delay-2 {
+          animation-delay: 0.6s;
         }
       `}</style>
 
+      {/* Focus Mode Aura */}
+      {status === 'focus' && (
+        <>
+          <motion.div 
+            className="absolute inset-0 rounded-full bg-purple-500/40 -m-6"
+            animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div 
+            className="absolute inset-0 rounded-full border-2 border-purple-500/50 -m-4"
+            animate={{ scale: [1, 1.2, 1], opacity: [0.8, 0.3, 0.8] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+          />
+        </>
+      )}
 
-      <AnimatePresence>
-        {emote && (
-          <motion.div initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -70 }} exit={{ scale: 0, opacity: 0 }} className="absolute z-[1200] text-3xl pointer-events-none">{emote}</motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {message && (
-          <motion.div initial={{ opacity: 0, scale: 0.8, y: 10 }} animate={{ opacity: 1, scale: 1, y: -90 }} exit={{ opacity: 0, scale: 0.8 }} className="absolute z-[1150] bg-white text-black px-4 py-2 rounded-2xl shadow-xl border-2 border-black font-bold text-sm whitespace-nowrap max-w-[200px] truncate">
-            {message}
-            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-r-2 border-b-2 border-black rotate-45" />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Speaking Indicator */}
+      {/* Visual Sound Waves */}
       {isSpeaking && (
-        <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.2, 0.4, 0.2] }} transition={{ repeat: Infinity, duration: 1 }} className="absolute inset-0 rounded-full bg-black/10 -m-4" />
+        <>
+          <motion.div 
+            className="absolute inset-0 rounded-full bg-emerald-500/30 -m-4 sound-wave"
+          />
+          <motion.div 
+            className="absolute inset-0 rounded-full bg-emerald-500/20 -m-4 sound-wave sound-wave-delay-1"
+          />
+          <motion.div 
+            className="absolute inset-0 rounded-full bg-emerald-500/10 -m-4 sound-wave sound-wave-delay-2"
+          />
+        </>
       )}
 
       {/* Shadow */}
       <div className="absolute bottom-0 w-12 h-3 bg-black/10 rounded-[100%] blur-[4px] z-0" />
 
-      {/* Main Avatar Body */}
-      <div className="avatar-container relative w-full h-full flex flex-col items-center z-10">
-        
-        {/* Head Section (1/6 of height) */}
-        <div className="relative z-40 mb-1" style={{ width: 24, height: 24 }}>
-          {renderBackHair()}
-          {renderHair()}
-          {renderAccessory()}
-          <div 
-            className="w-full h-full rounded-full border-2 border-black/5 shadow-sm overflow-hidden relative z-20"
-            style={{ backgroundColor: config.skinColor }}
-          >
-            {config.photoURL ? (
-              <img 
-                src={config.photoURL} 
-                alt="head" 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <>
-                <div className="absolute top-[40%] left-[25%] w-1.5 h-1.5 bg-slate-800 rounded-full" />
-                <div className="absolute top-[40%] right-[25%] w-1.5 h-1.5 bg-slate-800 rounded-full" />
-                <div className="absolute bottom-[20%] left-1/2 -translate-x-1/2 w-2 h-1 bg-rose-300/50 rounded-full" />
-              </>
-            )}
+      {/* Profile Photo */}
+      <div className="relative z-10 w-full h-full rounded-full overflow-hidden border-2 border-white/20 shadow-lg">
+        {config.photoURL ? (
+          <ProgressiveImage 
+            src={config.photoURL} 
+            alt={name || 'avatar'} 
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+            <User className="w-5 h-5 text-white" />
           </div>
-        </div>
-
-        {/* Neck */}
-        <div className="w-3 h-1.5 -mt-2 mb-0.5 z-30" style={{ backgroundColor: config.skinColor }} />
-
-        {/* Torso Section */}
-        <div className="relative z-20 flex flex-col items-center">
-          {/* Shirt / Top */}
-          <div 
-            className={`relative rounded-t-xl border border-black/5 shadow-sm transition-all duration-300 ${config.topType === 'hoodie' ? 'rounded-b-lg' : 'rounded-b-sm'}`}
-            style={{ 
-              backgroundColor: config.topColor,
-              width: shoulderWidth,
-              height: 28
-            }}
-          >
-            {/* Hoodie Detail */}
-            {config.topType === 'hoodie' && (
-              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3/4 h-2 bg-black/10 rounded-t-full" />
-            )}
-            {/* Shirt Detail */}
-            {config.topType === 'shirt' && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full flex justify-center">
-                <div className="w-px h-full bg-black/10" />
-                <div className="absolute top-2 w-full flex justify-center gap-1">
-                  <div className="w-1 h-1 rounded-full bg-black/20" />
-                  <div className="w-1 h-1 rounded-full bg-black/20" />
-                </div>
-              </div>
-            )}
-            {/* Jacket Detail */}
-            {config.topType === 'jacket' && (
-              <div className="absolute inset-0 flex justify-center">
-                <div className="w-1/3 h-full bg-black/10" />
-                <div className="absolute top-2 left-1/4 w-1 h-1 rounded-full bg-black/30" />
-                <div className="absolute top-4 left-1/4 w-1 h-1 rounded-full bg-black/30" />
-              </div>
-            )}
-            {/* Sweater Detail */}
-            {config.topType === 'sweater' && (
-              <div className="absolute inset-0 opacity-20 bg-[repeating-linear-gradient(90deg,transparent,transparent_2px,black_2px,black_4px)]" />
-            )}
-            {/* Tanktop Detail */}
-            {config.topType === 'tanktop' && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-2 bg-white/20 rounded-b-full" />
-            )}
-          </div>
-          
-          {/* Arms */}
-          {config.topType !== 'tanktop' && (
-            <>
-              <div className="absolute top-1 -left-2 w-3 h-16 rounded-full origin-top -rotate-6 z-10" style={{ backgroundColor: config.topColor }}>
-                <div className="absolute bottom-0 w-full h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
-              </div>
-              <div className="absolute top-1 -right-2 w-3 h-16 rounded-full origin-top rotate-6 z-10" style={{ backgroundColor: config.topColor }}>
-                <div className="absolute bottom-0 w-full h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
-              </div>
-            </>
-          )}
-          {config.topType === 'tanktop' && (
-            <>
-              <div className="absolute top-1 -left-2 w-3 h-16 rounded-full origin-top -rotate-6 z-10" style={{ backgroundColor: config.skinColor }}>
-                <div className="absolute bottom-0 w-full h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
-              </div>
-              <div className="absolute top-1 -right-2 w-3 h-16 rounded-full origin-top rotate-6 z-10" style={{ backgroundColor: config.skinColor }}>
-                <div className="absolute bottom-0 w-full h-4 rounded-full" style={{ backgroundColor: config.skinColor }} />
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Legs Section */}
-        <div className="relative z-10 -mt-1 flex gap-1">
-          {/* Left Leg */}
-          <div 
-            className="rounded-b-md border border-black/5 shadow-sm transition-all duration-300 relative"
-            style={{ 
-              backgroundColor: config.bottomColor,
-              width: config.bottomType === 'skirt' ? bodyWidth : bodyWidth / 2.5,
-              height: config.bottomType === 'shorts' ? 12 : config.bottomType === 'skirt' ? 15 : legHeight
-            }}
-          >
-            {config.bottomType === 'shorts' && (
-              <div className="absolute bottom-[-12px] w-full h-12" style={{ backgroundColor: config.skinColor }} />
-            )}
-            {config.bottomType === 'skirt' && (
-              <div className="absolute bottom-[-15px] left-0 w-full flex justify-around">
-                <div className="w-3 h-15" style={{ backgroundColor: config.skinColor }} />
-                <div className="w-3 h-15" style={{ backgroundColor: config.skinColor }} />
-              </div>
-            )}
-            {/* Shoes */}
-            {config.bottomType !== 'skirt' && (
-              <div className="absolute bottom-[-4px] w-[120%] h-3 bg-slate-800 rounded-sm -left-[10%]" />
-            )}
-            {config.bottomType === 'skirt' && (
-              <div className="absolute bottom-[-18px] left-0 w-full flex justify-around">
-                <div className="w-4 h-3 bg-slate-800 rounded-sm" />
-                <div className="w-4 h-3 bg-slate-800 rounded-sm" />
-              </div>
-            )}
-          </div>
-          {/* Right Leg (Only if not skirt) */}
-          {config.bottomType !== 'skirt' && (
-            <div 
-              className="rounded-b-md border border-black/5 shadow-sm transition-all duration-300 relative"
-              style={{ 
-                backgroundColor: config.bottomColor,
-                width: bodyWidth / 2.5,
-                height: config.bottomType === 'shorts' ? 12 : legHeight
-              }}
-            >
-              {config.bottomType === 'shorts' && (
-                <div className="absolute bottom-[-12px] w-full h-12" style={{ backgroundColor: config.skinColor }} />
-              )}
-              {/* Shoes */}
-              <div className="absolute bottom-[-4px] w-[120%] h-3 bg-slate-800 rounded-sm -left-[10%]" />
-            </div>
-          )}
-        </div>
+        )}
       </div>
-    </div>
+
+      {/* Status Indicator */}
+      {status && (
+        <div 
+          className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white"
+          style={{ backgroundColor: statusColors[status] || statusColors.available }}
+        />
+      )}
+
+      {/* Audio Level Meter */}
+      {isLocal && audioLevel > 0.1 && (
+        <div className="absolute -right-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
+          {[...Array(5)].map((_, i) => (
+            <motion.div
+              key={i}
+              animate={{ height: audioLevel > (i + 1) * 0.2 ? 8 : 4 }}
+              className={`w-1 rounded-full transition-all ${
+                audioLevel > (i + 1) * 0.2 ? 'bg-emerald-500' : 'bg-slate-300'
+              }`}
+            />
+          ))}
+        </div>
+      )}
+    </motion.div>
   );
 });
 
@@ -959,10 +1549,11 @@ interface Task {
   id: string;
   text: string;
   done: boolean;
+  zone: string;
   uid?: string;
 }
 
-const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, remotePlayers, onAddTask, onToggleTask, onDeleteTask, onEditTask, onOpenSettings, onMinimapClick }: { 
+const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, remotePlayers, onAddTask, onToggleTask, onDeleteTask, onEditTask, onOpenSettings, onMinimapClick, onOpenChatHistory, onOpenStickyNotes, stickyNotes, connectionQuality, latency, isLoading = false, onQuickTravel, isLightTheme, onToggleTheme, onOpenFileDropZone, sharedFilesCount, textToSpeechEnabled, onToggleTextToSpeech, onExportTasksTXT, onExportTasksPDF, isRoomHost, onEndMeeting }: { 
   zone: string; 
   tasks: Task[]; 
   completedCount: number; 
@@ -976,6 +1567,23 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
   onEditTask: (id: string, text: string) => void;
   onOpenSettings: () => void;
   onMinimapClick: (p: Point) => void;
+  onOpenChatHistory: () => void;
+  onOpenStickyNotes: () => void;
+  stickyNotes: Array<{ id: string; text: string; x: number; y: number; color: string }>;
+  connectionQuality: 'excellent' | 'good' | 'fair' | 'poor';
+  latency: number;
+  isLoading?: boolean;
+  onQuickTravel?: (zoneName: string) => void;
+  isLightTheme: boolean;
+  onToggleTheme: () => void;
+  onOpenFileDropZone: () => void;
+  sharedFilesCount: number;
+  textToSpeechEnabled: boolean;
+  onToggleTextToSpeech: () => void;
+  onExportTasksTXT: () => void;
+  onExportTasksPDF: () => void;
+  isRoomHost: boolean;
+  onEndMeeting: () => void;
 }) => {
   const [time, setTime] = useState(new Date());
   const [showShareTooltip, setShowShareTooltip] = useState(false);
@@ -1016,6 +1624,22 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 pointer-events-none z-50">
+        <div className="absolute top-6 left-6 flex flex-col gap-4 pointer-events-auto">
+          <Skeleton className="h-24 w-64 rounded-2xl" />
+        </div>
+        <div className="absolute top-6 right-6 flex flex-col gap-4 pointer-events-auto">
+          <Skeleton className="h-16 w-48 rounded-2xl" />
+        </div>
+        <div className="absolute bottom-6 left-6 pointer-events-auto">
+          <Skeleton className="h-48 w-64 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 pointer-events-none z-50">
       {/* Top Left: Status & Zone */}
@@ -1025,22 +1649,74 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
           animate={{ x: 0, opacity: 1 }}
           className="bg-black p-5 rounded-2xl shadow-2xl border-l-8 border-white w-72"
         >
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2 mb-1">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-3 h-3 text-white/40" />
               <h1 className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Workspace Room</h1>
             </div>
             <div className="flex items-center gap-1">
               <button 
+                onClick={onOpenChatHistory}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+                title="Chat History"
+                aria-label="Open chat history"
+                tabIndex={0}
+              >
+                <MessageSquare className="w-3 h-3" />
+              </button>
+              <button 
+                onClick={onOpenFileDropZone}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50 relative"
+                title="Shared Files"
+                aria-label="Open shared files"
+                tabIndex={0}
+              >
+                <Upload className="w-3 h-3" />
+                {sharedFilesCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full" />
+                )}
+              </button>
+              <button 
+                onClick={onToggleTheme}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+                title={isLightTheme ? "Switch to Dark Mode" : "Switch to Light Mode"}
+                aria-label="Toggle theme"
+                tabIndex={0}
+              >
+                {isLightTheme ? <Zap className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
+              </button>
+              <button 
+                onClick={onToggleTextToSpeech}
+                className={`p-1 hover:bg-white/10 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-white/50 ${textToSpeechEnabled ? 'text-emerald-400' : 'text-white/40 hover:text-white'}`}
+                title={textToSpeechEnabled ? "Disable Text-to-Speech" : "Enable Text-to-Speech"}
+                aria-label="Toggle text-to-speech"
+                tabIndex={0}
+              >
+                <Volume className="w-3 h-3" />
+              </button>
+              <button 
                 onClick={onOpenSettings}
-                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50"
                 title="Settings"
+                aria-label="Open settings"
+                tabIndex={0}
               >
                 <Settings className="w-3 h-3" />
               </button>
             </div>
           </div>
           <p className="text-xl font-black text-white tracking-tight truncate">{roomId}</p>
+          {isRoomHost && (
+            <button
+              onClick={onEndMeeting}
+              className="mt-2 w-full py-2 bg-rose-500/20 text-rose-400 rounded-lg font-black text-[10px] uppercase tracking-wider hover:bg-rose-500/30 transition-colors flex items-center justify-center gap-1"
+              aria-label="End meeting"
+              tabIndex={0}
+            >
+              <X className="w-3 h-3" />
+              End Meeting
+            </button>
+          )}
         </motion.div>
 
         <motion.div 
@@ -1078,14 +1754,21 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
               value={newTaskText}
               onChange={(e) => setNewTaskText(e.target.value)}
               placeholder="Add a task..."
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-white/30 transition-all"
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-white/30 focus:ring-2 focus:ring-white/20 transition-all"
+              aria-label="New task input"
+              tabIndex={0}
             />
-            <button type="submit" className="p-1.5 bg-white text-black rounded-lg hover:bg-slate-200 transition-colors">
+            <button 
+              type="submit" 
+              className="p-1.5 bg-white text-black rounded-lg hover:bg-slate-200 transition-colors focus:outline-none focus:ring-2 focus:ring-white/50"
+              aria-label="Add task"
+              tabIndex={0}
+            >
               <Plus className="w-4 h-4" />
             </button>
           </form>
 
-          <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar mb-4">
             {tasks.length === 0 && (
               <p className="text-[10px] text-white/20 italic text-center py-4">No tasks yet. Start your day!</p>
             )}
@@ -1093,7 +1776,9 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
               <div key={task.id} className="group flex items-center gap-3 bg-white/5 p-2 rounded-xl border border-transparent hover:border-white/10 transition-all">
                 <button 
                   onClick={() => onToggleTask(task.id)}
-                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${task.done ? 'bg-white border-white' : 'border-white/20 hover:border-white/40'}`}
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-white/50 ${task.done ? 'bg-white border-white' : 'border-white/20 hover:border-white/40'}`}
+                  aria-label={task.done ? 'Mark task as incomplete' : 'Mark task as complete'}
+                  tabIndex={0}
                 >
                   {task.done && <Check className="w-2.5 h-2.5 text-black" />}
                 </button>
@@ -1106,12 +1791,23 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
                       value={editingText}
                       onChange={(e) => setEditingText(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
-                      className="flex-1 bg-white/10 border-none rounded px-1 py-0.5 text-xs text-white focus:outline-none"
+                      className="flex-1 bg-white/10 border-none rounded px-1 py-0.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                      aria-label="Edit task"
                     />
-                    <button onClick={saveEdit} className="text-white hover:text-emerald-400">
+                    <button 
+                      onClick={saveEdit} 
+                      className="text-white hover:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 rounded p-1"
+                      aria-label="Save edit"
+                      tabIndex={0}
+                    >
                       <Check className="w-3 h-3" />
                     </button>
-                    <button onClick={() => setEditingId(null)} className="text-white hover:text-rose-400">
+                    <button 
+                      onClick={() => setEditingId(null)} 
+                      className="text-white hover:text-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400 rounded p-1"
+                      aria-label="Cancel edit"
+                      tabIndex={0}
+                    >
                       <X className="w-3 h-3" />
                     </button>
                   </div>
@@ -1131,6 +1827,27 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="flex gap-2">
+            <button 
+              onClick={onExportTasksTXT}
+              className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-black text-[10px] text-white/60 hover:text-white transition-all flex items-center justify-center gap-1"
+              aria-label="Export tasks as TXT"
+              tabIndex={0}
+            >
+              <Download className="w-3 h-3" />
+              TXT
+            </button>
+            <button 
+              onClick={onExportTasksPDF}
+              className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-black text-[10px] text-white/60 hover:text-white transition-all flex items-center justify-center gap-1"
+              aria-label="Export tasks as PDF"
+              tabIndex={0}
+            >
+              <Download className="w-3 h-3" />
+              PDF
+            </button>
           </div>
         </motion.div>
 
@@ -1203,10 +1920,87 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
             )}
           </AnimatePresence>
         </motion.button>
+
+        {/* Sticky Notes Display */}
+        <motion.div
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="mt-3 bg-black/90 backdrop-blur-md p-4 rounded-2xl border border-white/10 shadow-xl max-w-xs"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-white/60" />
+              <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest">Sticky Notes</h3>
+            </div>
+            <button
+              onClick={onOpenStickyNotes}
+              className="text-[10px] font-black text-white/40 hover:text-white transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+            {stickyNotes.length === 0 ? (
+              <p className="text-[10px] text-white/40 font-medium text-center py-2">
+                No notes yet
+              </p>
+            ) : (
+              <>
+                {stickyNotes.slice(0, 3).map((note) => (
+                  <motion.div
+                    key={note.id}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 rounded-xl text-xs font-medium text-white/80 leading-relaxed cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={onOpenStickyNotes}
+                    style={{ backgroundColor: note.color + '20', border: `1px solid ${note.color}40` }}
+                  >
+                    {note.text}
+                  </motion.div>
+                ))}
+                {stickyNotes.length > 3 && (
+                  <p className="text-[10px] text-white/40 font-black text-center">
+                    +{stickyNotes.length - 3} more notes
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </motion.div>
       </div>
 
-      {/* Bottom Right: Clock */}
-      <div className="absolute bottom-8 right-8 flex items-center gap-6 pointer-events-auto">
+      {/* Bottom Right: Clock & Performance Metrics */}
+      <div className="absolute bottom-8 right-8 flex items-center gap-4 pointer-events-auto">
+        {/* Performance Metrics */}
+        <div className="bg-black px-4 py-3 rounded-[24px] shadow-xl border border-white/10 flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                connectionQuality === 'excellent' ? 'bg-emerald-500' :
+                connectionQuality === 'good' ? 'bg-emerald-500' :
+                connectionQuality === 'fair' ? 'bg-amber-500' : 'bg-rose-500'
+              }`} />
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                connectionQuality === 'excellent' ? 'bg-emerald-500' :
+                connectionQuality === 'good' ? 'bg-emerald-500' :
+                connectionQuality === 'fair' ? 'bg-amber-500' : 'bg-rose-500'
+              } ${connectionQuality === 'poor' ? 'opacity-30' : ''}`} />
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                connectionQuality === 'excellent' ? 'bg-emerald-500' :
+                connectionQuality === 'good' ? 'bg-amber-500' :
+                connectionQuality === 'fair' ? 'bg-rose-500' : 'bg-rose-500'
+              } ${connectionQuality === 'fair' || connectionQuality === 'poor' ? 'opacity-30' : ''}`} />
+            </div>
+          </div>
+          <div className="w-px h-4 bg-white/10" />
+          <div className="flex items-center gap-2">
+            <Zap className="w-3 h-3 text-white/40" />
+            <span className="text-[10px] font-black text-white/60 tabular-nums">{latency}ms</span>
+          </div>
+        </div>
+
+        {/* Clock */}
         <div className="bg-black px-6 py-4 rounded-[24px] shadow-xl border border-white/10 flex items-center gap-4">
           <div className="flex flex-col items-end">
             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">Current Time</span>
@@ -1221,49 +2015,17 @@ const HUD = React.memo(({ zone, tasks, completedCount, pos, roomId, roomUsers, r
         </div>
       </div>
 
-      {/* Minimap */}
-      <div className="absolute bottom-8 left-8 pointer-events-auto">
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * OFFICE_WIDTH;
-            const y = ((e.clientY - rect.top) / rect.height) * OFFICE_HEIGHT;
-            onMinimapClick({ x, y });
-          }}
-          className="bg-black/90 backdrop-blur-md p-2 rounded-xl shadow-2xl w-48 h-32 relative overflow-hidden border border-white/10 cursor-crosshair group"
-        >
-          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:10px_10px]" />
-          
-          {/* Click to Teleport Tooltip */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
-            <span className="text-[8px] font-black uppercase tracking-widest bg-white text-black px-2 py-1 rounded">Click to Teleport</span>
-          </div>
-
-          {/* Character Dot */}
-          <motion.div 
-            animate={{ 
-              left: (pos.x / OFFICE_WIDTH) * 100 + '%', 
-              top: (pos.y / OFFICE_HEIGHT) * 100 + '%' 
-            }}
-            className="absolute w-2 h-2 bg-white rounded-full shadow-[0_0_10px_#fff] z-10 -translate-x-1/2 -translate-y-1/2"
+      {/* Bottom Left: Minimap */}
+      <div className="absolute bottom-6 left-6 pointer-events-auto">
+        <div className="bg-black p-5 rounded-2xl shadow-2xl w-80">
+          <Minimap 
+            localPos={pos}
+            remotePlayers={remotePlayers}
+            zones={ZONES}
+            currentZone={zone}
+            onZoneClick={onQuickTravel}
           />
-          {/* Simple Wall Outlines */}
-          {WALLS.map((w, i) => (
-            <div 
-              key={i} 
-              className="absolute bg-white/10"
-              style={{ 
-                left: (w.left / OFFICE_WIDTH) * 100 + '%', 
-                top: (w.top / OFFICE_HEIGHT) * 100 + '%',
-                width: ((w.right - w.left) / OFFICE_WIDTH) * 100 + '%',
-                height: ((w.bottom - w.top) / OFFICE_HEIGHT) * 100 + '%'
-              }}
-            />
-          ))}
-        </motion.div>
+        </div>
       </div>
     </div>
   );
@@ -1342,7 +2104,7 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
 
   if (showAvatarCustomizer) {
     return (
-      <CharacterCustomizationModal 
+      <SimpleAvatarModal 
         onComplete={(config) => {
           setTempAvatar(config);
           setShowAvatarCustomizer(false);
@@ -1517,42 +2279,9 @@ const EntryModal = ({ onJoin, user }: { onJoin: (name: string, room: string, ava
   );
 };
 
-const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplete: (config: AvatarConfig) => void, user: any, userName: string | null }) => {
-  const [config, setConfig] = useState<AvatarConfig>(() => {
-    const saved = localStorage.getItem('avatarConfig');
-    return saved ? JSON.parse(saved) : {
-      avatarMode: 'default',
-      skinColor: '#f3c9b1',
-      hairStyle: 'short',
-      hairColor: '#4a2c2a',
-      topType: 'tshirt',
-      topColor: '#000000',
-      bottomType: 'jeans',
-      bottomColor: '#1e293b',
-      bodyType: 'normal',
-      heightType: 'normal',
-      accessory: 'none',
-      accessoryColor: '#000000',
-      photoURL: user?.photoURL || undefined
-    };
-  });
-
-  const skinColors = ['#f3c9b1', '#e0ac69', '#8d5524', '#c68642', '#ffdbac'];
-  const hairColors = ['#4a2c2a', '#2c1e1e', '#d6b37a', '#a5a5a5', '#000000', '#ef4444', '#3b82f6'];
-  const topColors = ['#000000', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#ffffff', '#ef4444', '#ec4899'];
-  const bottomColors = ['#1e293b', '#334155', '#475569', '#1e1b4b', '#000000', '#78350f', '#3f6212'];
-  const accessoryColors = ['#000000', '#ffffff', '#ef4444', '#3b82f6', '#eab308'];
-  
-  const hairStyles: AvatarConfig['hairStyle'][] = ['none', 'short', 'medium', 'curly', 'long', 'buzz', 'mohawk', 'bob'];
-  const bodyTypes: AvatarConfig['bodyType'][] = ['slim', 'normal', 'wide'];
-  const heightTypes: AvatarConfig['heightType'][] = ['short', 'normal', 'tall'];
-  const topTypes: AvatarConfig['topType'][] = ['tshirt', 'hoodie', 'shirt', 'jacket', 'sweater', 'tanktop'];
-  const bottomTypes: AvatarConfig['bottomType'][] = ['jeans', 'shorts', 'suit', 'skirt', 'joggers'];
-  const accessories: AvatarConfig['accessory'][] = ['none', 'glasses', 'sunglasses', 'hat', 'headphones', 'mask'];
-
+const SimpleAvatarModal = ({ onComplete, user, userName }: { onComplete: (config: AvatarConfig) => void, user: any, userName: string | null }) => {
   const handleComplete = async () => {
-    const finalConfig = { ...config, photoURL: user?.photoURL || config.photoURL };
-    localStorage.setItem('avatarConfig', JSON.stringify(finalConfig));
+    const finalConfig = { photoURL: user?.photoURL };
     if (user) {
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
@@ -1569,264 +2298,23 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white rounded-[40px] shadow-2xl w-full max-w-5xl flex flex-col md:flex-row overflow-hidden h-[90vh]"
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg p-12"
       >
-        {/* Preview Section */}
-        <div className="md:w-2/5 bg-slate-50 p-12 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-100 relative overflow-hidden">
-          <div className="absolute inset-0 opacity-5 bg-[radial-gradient(#000_1px,transparent_1px)] bg-[size:20px_20px]" />
-          
-          <div className="text-center mb-12 relative z-10">
-            <h2 className="text-4xl font-black text-black tracking-tight mb-2">Your Avatar</h2>
-            <p className="text-slate-500 font-medium">Design your professional presence</p>
+        <div className="text-center">
+          <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center overflow-hidden">
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt="profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <User className="w-12 h-12 text-white" />
+            )}
           </div>
-          
-          <div className="scale-[3.5] mb-20 relative z-10">
-            <Avatar config={config} isWalking={false} isSpeaking={false} name={userName || "You"} />
-          </div>
-
-          <div className="flex gap-4 relative z-10">
-            <button 
-              onClick={() => setConfig({
-                ...config,
-                skinColor: skinColors[Math.floor(Math.random() * skinColors.length)],
-                hairColor: hairColors[Math.floor(Math.random() * hairColors.length)],
-                topColor: topColors[Math.floor(Math.random() * topColors.length)],
-                bottomColor: bottomColors[Math.floor(Math.random() * bottomColors.length)],
-                hairStyle: hairStyles[Math.floor(Math.random() * hairStyles.length)],
-                bodyType: bodyTypes[Math.floor(Math.random() * bodyTypes.length)],
-                heightType: heightTypes[Math.floor(Math.random() * heightTypes.length)],
-                topType: topTypes[Math.floor(Math.random() * topTypes.length)],
-                bottomType: bottomTypes[Math.floor(Math.random() * bottomTypes.length)],
-                accessory: accessories[Math.floor(Math.random() * accessories.length)],
-                accessoryColor: accessoryColors[Math.floor(Math.random() * accessoryColors.length)]
-              })}
-              className="flex items-center gap-2 bg-white border-2 border-slate-200 px-6 py-3 rounded-2xl text-black font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all"
-            >
-              <Zap className="w-4 h-4" />
-              Randomize
-            </button>
-          </div>
-        </div>
-
-        {/* Options Section */}
-        <div className="md:w-3/5 p-10 overflow-y-auto custom-scrollbar">
-          <div className="space-y-10">
-            {/* Avatar Mode Toggle */}
-            <section>
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Avatar Version</h3>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setConfig({ ...config, avatarMode: 'default' })}
-                  className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${config.avatarMode === 'default' ? 'border-black bg-black text-white shadow-xl' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}
-                >
-                  Default (HD)
-                </button>
-                <button 
-                  onClick={() => setConfig({ ...config, avatarMode: 'beta' })}
-                  className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${config.avatarMode === 'beta' ? 'border-black bg-black text-white shadow-xl' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}
-                >
-                  Beta (Pixel)
-                </button>
-              </div>
-            </section>
-
-            {/* Identity Toggle */}
-            <section>
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Head Style</h3>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setConfig({ ...config, photoURL: undefined })}
-                  className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${!config.photoURL ? 'border-black bg-black text-white shadow-xl' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}
-                >
-                  Classic
-                </button>
-                <button 
-                  onClick={() => setConfig({ ...config, photoURL: user?.photoURL })}
-                  disabled={!user?.photoURL}
-                  className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${config.photoURL ? 'border-black bg-black text-white shadow-xl' : 'border-slate-100 text-slate-400 hover:border-slate-200'} disabled:opacity-50`}
-                >
-                  Profile Picture
-                </button>
-              </div>
-            </section>
-
-            {/* Skin Color */}
-            <section>
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Skin Tone</h3>
-              <div className="flex flex-wrap gap-3">
-                {skinColors.map(color => (
-                  <button 
-                    key={color}
-                    onClick={() => setConfig({ ...config, skinColor: color })}
-                    className={`w-12 h-12 rounded-2xl border-4 transition-all ${config.skinColor === color ? 'border-black scale-110 shadow-lg' : 'border-transparent hover:scale-105'}`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-            </section>
-
-            {/* Hair Style & Color */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Hairstyle</h3>
-                <div className="grid grid-cols-4 gap-2">
-                  {hairStyles.map(style => (
-                    <button 
-                      key={style}
-                      onClick={() => setConfig({ ...config, hairStyle: style })}
-                      className={`py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${config.hairStyle === style ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >
-                      {style}
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Hair Color</h3>
-                <div className="flex flex-wrap gap-2">
-                  {hairColors.map(color => (
-                    <button 
-                      key={color}
-                      onClick={() => setConfig({ ...config, hairColor: color })}
-                      className={`w-8 h-8 rounded-xl border-2 transition-all ${config.hairColor === color ? 'border-black scale-110' : 'border-transparent hover:scale-105'}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </section>
-            </div>
-
-            {/* Accessories */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Accessory</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {accessories.map(acc => (
-                    <button 
-                      key={acc}
-                      onClick={() => setConfig({ ...config, accessory: acc })}
-                      className={`py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${config.accessory === acc ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >
-                      {acc}
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Accessory Color</h3>
-                <div className="flex flex-wrap gap-2">
-                  {accessoryColors.map(color => (
-                    <button 
-                      key={color}
-                      onClick={() => setConfig({ ...config, accessoryColor: color })}
-                      className={`w-8 h-8 rounded-xl border-2 transition-all ${config.accessoryColor === color ? 'border-black scale-110' : 'border-transparent hover:scale-105'}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </section>
-            </div>
-
-            {/* Top Style & Color */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Top Style</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {topTypes.map(type => (
-                    <button 
-                      key={type}
-                      onClick={() => setConfig({ ...config, topType: type })}
-                      className={`py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${config.topType === type ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Top Color</h3>
-                <div className="flex flex-wrap gap-2">
-                  {topColors.map(color => (
-                    <button 
-                      key={color}
-                      onClick={() => setConfig({ ...config, topColor: color })}
-                      className={`w-8 h-8 rounded-xl border-2 transition-all ${config.topColor === color ? 'border-black scale-110' : 'border-transparent hover:scale-105'}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </section>
-            </div>
-
-            {/* Bottom Style & Color */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Bottom Style</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {bottomTypes.map(type => (
-                    <button 
-                      key={type}
-                      onClick={() => setConfig({ ...config, bottomType: type })}
-                      className={`py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${config.bottomType === type ? 'bg-black text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Bottom Color</h3>
-                <div className="flex flex-wrap gap-2">
-                  {bottomColors.map(color => (
-                    <button 
-                      key={color}
-                      onClick={() => setConfig({ ...config, bottomColor: color })}
-                      className={`w-8 h-8 rounded-xl border-2 transition-all ${config.bottomColor === color ? 'border-black scale-110' : 'border-transparent hover:scale-105'}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </section>
-            </div>
-
-            {/* Body Type & Height */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Body Build</h3>
-                <div className="flex gap-2">
-                  {bodyTypes.map(type => (
-                    <button 
-                      key={type}
-                      onClick={() => setConfig({ ...config, bodyType: type })}
-                      className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${config.bodyType === type ? 'bg-black text-white shadow-xl' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <section>
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Height</h3>
-                <div className="flex gap-2">
-                  {heightTypes.map(type => (
-                    <button 
-                      key={type}
-                      onClick={() => setConfig({ ...config, heightType: type })}
-                      className={`flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${config.heightType === type ? 'bg-black text-white shadow-xl' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            </div>
-          </div>
-
+          <h2 className="text-3xl font-black text-black mb-2">Welcome, {userName || 'User'}!</h2>
+          <p className="text-slate-500 font-medium mb-8">Your profile photo will be used as your avatar</p>
           <button 
             onClick={handleComplete}
-            className="w-full mt-12 py-6 bg-black hover:bg-slate-900 text-white rounded-[24px] font-black text-sm uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+            className="w-full py-4 bg-black hover:bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-3"
           >
-            Save & Enter Workspace
+            Enter Workspace
             <ArrowRight className="w-5 h-5" />
           </button>
         </div>
@@ -1835,9 +2323,10 @@ const CharacterCustomizationModal = ({ onComplete, user, userName }: { onComplet
   );
 };
 
-const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, localZone }: { player: RemotePlayer; localPos: Point; localIsPrivate: boolean; localZone: string; key?: string }) => {
+const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, localZone, localStatus }: { player: RemotePlayer; localPos: Point; localIsPrivate: boolean; localZone: string; localStatus?: 'available' | 'busy' | 'focus'; key?: string }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [showBusyPrompt, setShowBusyPrompt] = useState(false);
   const dist = Math.hypot(player.pos.x - localPos.x, player.pos.y - localPos.y);
   
   // Proximity-based visibility for speaking cue
@@ -1845,32 +2334,32 @@ const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, local
 
   // Interpolation logic: Use a more responsive spring for remote players
   // to follow the server updates smoothly.
-  const springConfig = { type: 'spring', damping: 35, stiffness: 250, mass: 0.4 };
+  const springConfig = { type: 'spring' as const, damping: 25, stiffness: 120, mass: 0.5 };
 
-  // Meeting Room Isolation Logic:
-  const isMeetingRoom = (z: string) => z && z.startsWith("Conference Room");
-  const inSameMeetingRoom = isMeetingRoom(localZone) && localZone === player.zone;
-  const localInMeetingRoom = isMeetingRoom(localZone);
-  const playerInMeetingRoom = isMeetingRoom(player.zone);
+  // Zone-Based Audio Isolation Logic:
+  // Voice only travels within the same zone, regardless of physical proximity through walls
+  const inSameZone = localZone === player.zone;
   
   // Private Bubble Logic: 
   const inSameBubble = dist < 100;
   const isMutedByPrivate = (player.isPrivate || localIsPrivate) && !inSameBubble;
   
-  let volume = 0;
-  // STRICT ISOLATION: 
-  // 1. If local is in a meeting room, only hear people in the SAME room.
-  // 2. If local is NOT in a meeting room, but player IS, player is inaudible.
-  if (localInMeetingRoom) {
-    if (inSameMeetingRoom) {
-      const normalizedDist = dist / (VOICE_RADIUS * 1.5);
-      volume = normalizedDist < 1 ? 1 / (1 + Math.pow(normalizedDist * 2, 2)) : 0;
+  // Do Not Disturb Mode: Block audio if either user is in busy status
+  const isMutedByBusyStatus = (player.status === 'busy' || localStatus === 'busy') && !(inSameZone && dist < 50);
+  
+  // Show busy prompt when approaching a busy user
+  useEffect(() => {
+    if (player.status === 'busy' && inSameZone && dist < 100 && dist > 30) {
+      setShowBusyPrompt(true);
     } else {
-      volume = 0; // Completely inaudible if not in same room
+      setShowBusyPrompt(false);
     }
-  } else if (playerInMeetingRoom) {
-    volume = 0; // Completely inaudible to those outside
-  } else if (!isMutedByPrivate) {
+  }, [player.status, inSameZone, dist]);
+  
+  let volume = 0;
+  // STRICT ZONE ISOLATION: 
+  // Voice only travels if both users are in the same zone and not blocked by busy status
+  if (inSameZone && !isMutedByPrivate && !isMutedByBusyStatus) {
     const normalizedDist = dist / VOICE_RADIUS;
     volume = normalizedDist < 1 ? 1 / (1 + Math.pow(normalizedDist * 2, 2)) : 0;
   }
@@ -1888,7 +2377,7 @@ const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, local
       transition={springConfig}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="absolute z-[900] -ml-[30px] -mt-[30px] w-[60px] h-[60px]"
+      className="absolute z-[900] -ml-[26px] -mt-[26px] w-[52px] h-[52px]"
     >
       {/* Private Bubble Visual */}
       {player.isPrivate && (
@@ -1919,14 +2408,41 @@ const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, local
         )}
       </AnimatePresence>
 
+      {/* Private Conversation Indicator */}
+      {player.isPrivate && (
+        <motion.div 
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="absolute -top-3 -right-3 bg-purple-600 text-white p-1.5 rounded-full shadow-lg"
+          title="Private conversation in progress"
+        >
+          <Lock className="w-3 h-3" />
+        </motion.div>
+      )}
+
+      {/* Busy Status Prompt */}
+      <AnimatePresence>
+        {showBusyPrompt && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute -top-20 left-1/2 -translate-x-1/2 whitespace-nowrap bg-amber-500 text-white px-3 py-2 rounded-xl shadow-lg border border-amber-400 flex items-center gap-2 z-[1000]"
+          >
+            <Bell className="w-3 h-3 animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-wider">{player.name} is busy - won't hear you</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <Avatar 
         config={player.avatarConfig} 
         isWalking={player.isWalking} 
         isSpeaking={player.isSpeaking && canSeeSpeakingCue} 
-        message={player.message}
-        emote={player.emote}
         status={player.status}
         name={player.name}
+        isSitting={false}
+        sittingPose={null}
       />
       <audio ref={audioRef} autoPlay />
     </motion.div>
@@ -1934,33 +2450,97 @@ const RemotePlayerAvatar = React.memo(({ player, localPos, localIsPrivate, local
 });
 
 export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [showLanding, setShowLanding] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [highContrastMode, setHighContrastMode] = useState(false);
+  const [textSize, setTextSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon' | 'evening' | 'night'>('morning');
+  const [audioLevel, setAudioLevel] = useState(0);
+
+  // Determine time of day based on current hour
+  useEffect(() => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) setTimeOfDay('morning');
+    else if (hour >= 12 && hour < 17) setTimeOfDay('afternoon');
+    else if (hour >= 17 && hour < 20) setTimeOfDay('evening');
+    else setTimeOfDay('night');
+  }, []);
+
+  // Monitor audio level for visual feedback
+  useEffect(() => {
+    if (localStreamRef.current) {
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(localStreamRef.current);
+      source.connect(analyser);
+      analyser.fftSize = 256;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const updateAudioLevel = () => {
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setAudioLevel(average / 255);
+        requestAnimationFrame(updateAudioLevel);
+      };
+
+      updateAudioLevel();
+
+      return () => {
+        source.disconnect();
+        audioContext.close();
+      };
+    }
+  }, []);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+  const [showQuickStart, setShowQuickStart] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [showStickyNotes, setShowStickyNotes] = useState(false);
+  const [chatHistory, setChatHistory] = useState<Array<{ id: string; text: string; sender: string; timestamp: number }>>([]);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [stickyNotes, setStickyNotes] = useState<Array<{ id: string; text: string; x: number; y: number; color: string }>>([]);
+  const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'fair' | 'poor'>('excellent');
+  const [latency, setLatency] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
   const [status, setStatus] = useState<'available' | 'busy' | 'focus'>('available');
+  const [customStatus, setCustomStatus] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [pos, setPos] = useState<Point>({ x: 100, y: 700 });
-  const [angle, setAngle] = useState(180);
+  const [angle, setAngle] = useState(0);
   const [isWalking, setIsWalking] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [currentZone, setCurrentZone] = useState("Lobby");
   const [keys, setKeys] = useState<Record<string, boolean>>({});
   const [remotePlayers, setRemotePlayers] = useState<Record<string, RemotePlayer>>({});
+  const [roomUsers, setRoomUsers] = useState<any[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [isSitting, setIsSitting] = useState(false);
+  const [sittingPose, setSittingPose] = useState<'chair' | 'desk' | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const [localEmote, setLocalEmote] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [isConnected, setIsConnected] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
+  const [isLightTheme, setIsLightTheme] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState<keyof typeof OFFICE_THEMES>('modern');
+  const [textToSpeechEnabled, setTextToSpeechEnabled] = useState(false);
+  const [sharedFiles, setSharedFiles] = useState<Array<{ id: string; name: string; url: string; size: number; uploadedBy: string; timestamp: number }>>([]);
+  const [isRoomHost, setIsRoomHost] = useState(false);
+  const [showFileDropZone, setShowFileDropZone] = useState(false);
 
   const keysRef = useRef<Record<string, boolean>>({});
   const remotePlayersRef = useRef<Record<string, RemotePlayer>>({});
   const isWalkingRef = useRef(false);
-  const angleRef = useRef(180);
+  const angleRef = useRef(0);
   const currentZoneRef = useRef("Lobby");
   const tasksRef = useRef<Task[]>([]);
   const peersRef = useRef<Record<string, Peer.Instance>>({});
@@ -1970,7 +2550,7 @@ export default function App() {
   const lastEmitRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
   const pendingInputs = useRef<{ seq: number; pos: Point }[]>([]);
-  const socketRef = useRef<Socket | null>(null);
+  const userRef = useRef<ReturnType<typeof ref> | null>(null);
   const [showEmotePicker, setShowEmotePicker] = useState(false);
 
   // Firebase Auth
@@ -1997,15 +2577,7 @@ export default function App() {
         } else {
           // Default config for new user
           setAvatarConfig({
-            skinColor: '#f3c9b1',
-            hairStyle: 'short',
-            hairColor: '#4a2c2a',
-            topType: 'tshirt',
-            topColor: '#000000',
-            bottomType: 'jeans',
-            bottomColor: '#1e293b',
-            bodyType: 'normal',
-            photoURL: u.photoURL || undefined
+            photoURL: user?.photoURL
           });
         }
 
@@ -2038,117 +2610,351 @@ export default function App() {
     return () => clearInterval(interval);
   }, [user]);
 
-  // Keyboard Shortcuts
+  // Listen for shared files in the room
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
+    if (!roomId) return;
+    
+    const q = query(collection(db, 'roomFiles'), where('roomId', '==', roomId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const files = snapshot.docs.map(d => d.data() as { id: string; name: string; url: string; size: number; uploadedBy: string; timestamp: number });
+      setSharedFiles(files);
+    });
+    
+    return () => unsubscribe();
+  }, [roomId]);
 
-      if (e.key.toLowerCase() === 's') {
-        setShowSettings(prev => !prev);
+  // Check if user is room host (creator)
+  useEffect(() => {
+    if (!roomId || !user) return;
+    
+    const checkHost = async () => {
+      try {
+        const roomDoc = await getDoc(doc(db, 'rooms', roomId));
+        if (roomDoc.exists()) {
+          const roomData = roomDoc.data();
+          setIsRoomHost(roomData.createdBy === user.uid);
+        }
+      } catch (error) {
+        console.error('Failed to check host status:', error);
       }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const chatInputEl = document.querySelector('input[placeholder="Type a message..."]') as HTMLInputElement;
-        chatInputEl?.focus();
-      }
-      if (e.key >= '1' && e.key <= '8') {
-        const emotes = ["👋", "👍", "😂", "🚀", "🔥", "❤️", "😮", "🎉"];
-        handleSendEmote(emotes[parseInt(e.key) - 1]);
+    };
+    
+    checkHost();
+  }, [roomId, user]);
+
+  // Update room activity timestamp for Cloud Functions cleanup
+  useEffect(() => {
+    if (!roomId) return;
+
+    const updateRoomActivity = async () => {
+      try {
+        const roomRef = doc(db, 'rooms', roomId);
+        await updateDoc(roomRef, {
+          lastActivity: new Date().toISOString(),
+          playerCount: Object.keys(remotePlayers).length + 1
+        });
+      } catch (error) {
+        console.error('Failed to update room activity:', error);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Update activity every minute for Cloud Functions to track
+    const activityInterval = setInterval(updateRoomActivity, 60000);
+    updateRoomActivity(); // Initial update
+
+    return () => {
+      clearInterval(activityInterval);
+    };
+  }, [roomId, remotePlayers]);
+
+  // Check if user has completed tutorial
+  useEffect(() => {
+    if (roomId && avatarConfig) {
+      const tutorialCompleted = localStorage.getItem('tutorialCompleted');
+      if (!tutorialCompleted) {
+        // Show tutorial after a short delay to let the user see the office first
+        setTimeout(() => {
+          setShowTutorial(true);
+        }, 1500);
+      }
+    }
+  }, [roomId, avatarConfig]);
+
+  // Load user data from localStorage on mount
+  useEffect(() => {
+    const savedUserName = localStorage.getItem('userName');
+    const savedAvatarConfig = localStorage.getItem('avatarConfig');
+    const savedRoomId = localStorage.getItem('roomId');
+    
+    if (savedUserName) setUserName(savedUserName);
+    if (savedAvatarConfig) setAvatarConfig(JSON.parse(savedAvatarConfig));
+    if (savedRoomId) {
+      setRoomId(savedRoomId);
+      setShowLanding(false);
+    }
   }, []);
 
-  const handleJoin = async (name: string, room: string, avatar?: AvatarConfig, initialStatus?: string, password?: string) => {
-    let currentUser = user;
-    if (!currentUser) {
-      try {
-        const result = await signInWithPopup(auth, googleProvider);
-        currentUser = result.user;
-        setUser(result.user);
-        setUserName(result.user.displayName || name);
-      } catch (err) {
-        console.error("Auth failed", err);
-        setUserName(name);
-        // If auth fails, we might still want to allow joining as guest? 
-        // But rules require isAuthenticated() for private rooms.
-      }
-    } else {
-      setUserName(name);
+  // Reinitialize connection when all required data is present after refresh
+  useEffect(() => {
+    if (userName && roomId && avatarConfig && user?.uid && !isConnected) {
+      // Connection will be established by the existing connection useEffect
+      // This ensures connection is re-established after refresh
+    }
+  }, [userName, roomId, avatarConfig, user?.uid, isConnected]);
+
+  // Save user data to localStorage when it changes
+  useEffect(() => {
+    if (userName) localStorage.setItem('userName', userName);
+  }, [userName]);
+
+  useEffect(() => {
+    if (avatarConfig) localStorage.setItem('avatarConfig', JSON.stringify(avatarConfig));
+  }, [avatarConfig]);
+
+  useEffect(() => {
+    if (roomId) localStorage.setItem('roomId', roomId);
+  }, [roomId]);
+
+  // Handle URL-based routing
+  useEffect(() => {
+    const path = location.pathname;
+    const roomParam = searchParams.get('room');
+    const avatarParam = searchParams.get('avatar');
+
+    // Handle ?avatar=true query parameter
+    if (avatarParam === 'true' && user) {
+      setShowQuickStart(true);
+      setShowLanding(false);
     }
 
-    if (password) {
-      const roomDoc = await getDoc(doc(db, 'rooms', room));
-      if (roomDoc.exists() && roomDoc.data().password && roomDoc.data().password !== password) {
-        alert("Incorrect room password!");
-        return;
-      }
+    // Handle ?room=xyz query parameter
+    if (roomParam && roomParam !== roomId) {
+      setRoomId(roomParam);
+      setShowLanding(false);
     }
 
-    if (avatar) setAvatarConfig(avatar);
-    if (initialStatus) setStatus(initialStatus as any);
-    setRoomId(room);
-
-    // Update Firestore with current room and presence
-    if (currentUser) {
-      await setDoc(doc(db, 'users', currentUser.uid), {
-        roomId: room,
-        status: initialStatus || 'available',
-        lastSeen: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+    // Handle /room/:roomId route
+    if (path.startsWith('/room/')) {
+      const roomIdFromPath = path.split('/')[2];
+      if (roomIdFromPath && roomIdFromPath !== roomId) {
+        setRoomId(roomIdFromPath);
+        setShowLanding(false);
+      }
     }
     
-    initVoice();
-  };
+    // Handle /join-create route
+    if (path === '/join-create') {
+      setShowQuickStart(true);
+      setShowLanding(false);
+    }
+    
+    // Handle root route
+    if (path === '/' || path === '') {
+      if (!roomId && !roomParam && avatarParam !== 'true') {
+        setShowLanding(true);
+      }
+    }
+  }, [location.pathname, roomId, searchParams, user]);
+
+  // Update URL when room changes
+  useEffect(() => {
+    if (roomId) {
+      navigate(`/room/${roomId}`, { replace: true });
+    }
+  }, [roomId, navigate]);
+
+  // Monitor connection quality and latency
+  useEffect(() => {
+    if (!roomId) return;
+
+    let isFirebaseConnected = false;
+    
+    // Listen to Firebase connection state
+    const connectedRef = ref(rtdb, '.info/connected');
+    const unsubscribe = onValue(connectedRef, (snapshot) => {
+      isFirebaseConnected = snapshot.val() === true;
+    });
+
+    const interval = setInterval(() => {
+      if (!isFirebaseConnected) {
+        setConnectionQuality('poor');
+        setLatency(999);
+        return;
+      }
+
+      const startTime = performance.now();
+      
+      // Measure latency by writing and reading a test value
+      const testRef = ref(rtdb, `rooms/${roomId}/connectionTest/${user?.uid || 'anonymous'}`);
+      
+      set(testRef, { timestamp: Date.now() })
+        .then(() => {
+          return get(testRef);
+        })
+        .then(() => {
+          const endTime = performance.now();
+          const measuredLatency = Math.round(endTime - startTime);
+          setLatency(measuredLatency);
+
+          // Determine connection quality based on latency
+          if (measuredLatency < 50) {
+            setConnectionQuality('excellent');
+          } else if (measuredLatency < 150) {
+            setConnectionQuality('good');
+          } else if (measuredLatency < 300) {
+            setConnectionQuality('fair');
+          } else {
+            setConnectionQuality('poor');
+          }
+
+          // Reset reconnection state if connection is good
+          if (measuredLatency < 300 && isReconnecting) {
+            setIsReconnecting(false);
+            setReconnectAttempts(0);
+          }
+
+          // Clean up test data
+          remove(testRef).catch(() => {});
+        })
+        .catch(() => {
+          setConnectionQuality('poor');
+          setLatency(999);
+
+          // Trigger auto-reconnect
+          if (!isReconnecting && reconnectAttempts < 5) {
+            setIsReconnecting(true);
+            setReconnectAttempts(prev => prev + 1);
+            
+            // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+            const backoffDelay = Math.min(2000 * Math.pow(2, reconnectAttempts), 32000);
+            
+            setTimeout(() => {
+              setIsReconnecting(false);
+              setReconnectAttempts(0);
+            }, backoffDelay);
+          }
+        });
+    }, 5000); // Check every 5 seconds
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [roomId, isReconnecting, reconnectAttempts, user]);
 
   const handleMinimapClick = (p: Point) => {
     // Check for collisions at target point
     if (checkCollision(p.x, p.y)) return;
-    
+
     posRef.current = p;
     setPos(p);
+  };
+
+  const handleQuickTravel = (zoneName: string) => {
+    const zone = ZONES.find(z => z.name === zoneName);
+    if (!zone) return;
+
+    // Calculate center of the zone
+    const targetX = (zone.bounds.left + zone.bounds.right) / 2;
+    const targetY = (zone.bounds.top + zone.bounds.bottom) / 2;
+    const targetPos = { x: targetX, y: targetY };
+
+    // Animate position to zone center
+    const startX = posRef.current.x;
+    const startY = posRef.current.y;
+    const duration = 800;
+    const startTime = Date.now();
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function for smooth animation
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      
+      const newX = startX + (targetX - startX) * easeOut;
+      const newY = startY + (targetY - startY) * easeOut;
+      
+      posRef.current = { x: newX, y: newY };
+      setPos({ x: newX, y: newY });
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
     
-    // Emit teleport event
-    if (socketRef.current) {
-      socketRef.current.emit('user:moved', {
-        pos: p,
-        angle: angleRef.current,
-        isWalking: false,
-        zone: currentZoneRef.current
-      });
-    }
+    animate();
+
+    // Update position in Firebase RTDB after animation
+    setTimeout(() => {
+      if (userRef.current) {
+        update(userRef.current, {
+          pos: targetPos,
+          angle: angleRef.current,
+          isWalking: false,
+          zone: zoneName
+        });
+      }
+    }, duration);
   };
 
   const handleAddTask = async (text: string) => {
+    // Sanitize task text
+    const sanitizedText = sanitizeText(text);
+    
+    // Optimistic update: add task immediately to UI
+    const tempId = `temp-${Date.now()}`;
+    const tempTask = { id: tempId, text: sanitizedText, done: false, zone: currentZone };
+    setTasks(prev => [...prev, tempTask]);
+
     if (user) {
-      await addDoc(collection(db, 'tasks'), {
-        uid: user.uid,
-        text,
-        done: false,
-        createdAt: new Date().toISOString()
-      });
-    } else {
-      setTasks(prev => [...prev, { id: Date.now().toString(), text, done: false }]);
+      try {
+        await addDoc(collection(db, 'tasks'), {
+          uid: user.uid,
+          text: sanitizedText,
+          done: false,
+          zone: currentZone,
+          createdAt: new Date().toISOString()
+        });
+        // Remove temp task after successful add (Firebase listener will add the real one)
+        setTasks(prev => prev.filter(t => t.id !== tempId));
+      } catch (error) {
+        // Revert optimistic update on error
+        setTasks(prev => prev.filter(t => t.id !== tempId));
+        console.error('Failed to add task:', error);
+      }
     }
   };
 
   const handleToggleTask = async (id: string) => {
     const task = tasks.find(t => t.id === id);
-    if (user && task) {
-      await updateDoc(doc(db, 'tasks', id), { done: !task.done });
-    } else {
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+    if (!task) return;
+
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'tasks', id), { done: !task.done });
+      } catch (error) {
+        // Revert on error
+        setTasks(prev => prev.map(t => t.id === id ? { ...t, done: task.done } : t));
+        console.error('Failed to toggle task:', error);
+      }
     }
   };
 
   const handleDeleteTask = async (id: string) => {
+    // Optimistic update
+    setTasks(prev => prev.filter(t => t.id !== id));
+
     if (user) {
-      await deleteDoc(doc(db, 'tasks', id));
-    } else {
-      setTasks(prev => prev.filter(t => t.id !== id));
+      try {
+        await deleteDoc(doc(db, 'tasks', id));
+      } catch (error) {
+        // Revert on error - we'd need to restore the task but for now just log
+        console.error('Failed to delete task:', error);
+      }
     }
   };
 
@@ -2163,29 +2969,228 @@ export default function App() {
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (chatInput.trim()) {
-      setLocalMessage(chatInput.trim());
-      socketRef.current?.emit("chat:message", chatInput.trim());
+      const sanitizedMessage = sanitizeUserInput(chatInput.trim());
+      setLocalMessage(sanitizedMessage);
+      if (userRef.current) {
+        update(userRef.current, { message: sanitizedMessage });
+      }
+      // Save to chat history
+      setChatHistory(prev => [...prev, {
+        id: Date.now().toString(),
+        text: sanitizedMessage,
+        sender: userName || "Anonymous",
+        timestamp: Date.now()
+      }]);
+      // Speak the message if text-to-speech is enabled
+      speakText(sanitizedMessage);
       setChatInput("");
-      setTimeout(() => setLocalMessage(null), 5000);
+      // Clear message after 5 seconds
+      setTimeout(() => {
+        setLocalMessage(null);
+        if (userRef.current) {
+          update(userRef.current, { message: null });
+        }
+      }, 5000);
     }
+  };
+
+  const handleDeleteChatMessage = (id: string) => {
+    setChatHistory(prev => prev.filter(m => m.id !== id));
+  };
+
+  const handleAddStickyNote = (note: Omit<{ id: string; text: string; x: number; y: number; color: string }, 'id'>) => {
+    setStickyNotes(prev => [...prev, { ...note, id: Date.now().toString() }]);
+  };
+
+  const handleUpdateStickyNote = (id: string, text: string) => {
+    setStickyNotes(prev => prev.map(n => n.id === id ? { ...n, text } : n));
+  };
+
+  const handleDeleteStickyNote = (id: string) => {
+    setStickyNotes(prev => prev.filter(n => n.id !== id));
+  };
+
+  const handleUpdateStickyNotePosition = (id: string, x: number, y: number) => {
+    setStickyNotes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n));
   };
 
   const handleSendEmote = (emote: string) => {
     setLocalEmote(emote);
-    socketRef.current?.emit("chat:emote", emote);
+    if (userRef.current) {
+      update(userRef.current, { emote });
+    }
     setShowEmotePicker(false);
-    setTimeout(() => setLocalEmote(null), 3000);
+    setTimeout(() => {
+      setLocalEmote(null);
+      if (userRef.current) {
+        update(userRef.current, { emote: null });
+      }
+    }, 2000);
   };
 
   const handleTogglePrivate = () => {
     const next = !isPrivate;
     setIsPrivate(next);
-    socketRef.current?.emit("status", { status, isPrivate: next });
+    if (userRef.current) {
+      update(userRef.current, { status, isPrivate: next });
+    }
   };
 
   const handleChangeStatus = (s: 'available' | 'busy' | 'focus') => {
     setStatus(s);
-    socketRef.current?.emit("status", { status: s, isPrivate });
+    if (userRef.current) {
+      update(userRef.current, { status: s, isPrivate });
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!user || !roomId) return;
+    
+    try {
+      // Sanitize file name
+      const sanitizedName = sanitizeFileName(file.name);
+      const fileRef = storageRef(storage, `rooms/${roomId}/${Date.now()}-${sanitizedName}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      
+      const fileData = {
+        id: Date.now().toString(),
+        name: sanitizedName,
+        url,
+        size: file.size,
+        uploadedBy: user.displayName || 'Anonymous',
+        timestamp: Date.now()
+      };
+      
+      // Save to Firestore
+      await addDoc(collection(db, 'roomFiles'), {
+        ...fileData,
+        roomId,
+        uid: user.uid
+      });
+      
+      setSharedFiles(prev => [...prev, fileData]);
+    } catch (error) {
+      console.error('File upload failed:', error);
+    }
+  };
+
+  const handleDeleteFile = async (fileId: string, fileUrl: string) => {
+    try {
+      // Delete from Storage
+      const fileRef = storageRef(storage, fileUrl);
+      await deleteObject(fileRef);
+      
+      // Delete from Firestore
+      const q = query(collection(db, 'roomFiles'), where('id', '==', fileId));
+      const snapshot = await getDocs(q);
+      snapshot.docs.forEach(doc => deleteDoc(doc.ref));
+      
+      setSharedFiles(prev => prev.filter(f => f.id !== fileId));
+    } catch (error) {
+      console.error('File deletion failed:', error);
+    }
+  };
+
+  const handleEndMeeting = async () => {
+    if (!roomId || !isRoomHost) return;
+    
+    try {
+      // Delete all shared files
+      for (const file of sharedFiles) {
+        await handleDeleteFile(file.id, file.url);
+      }
+      
+      // Delete room from Firestore
+      await deleteDoc(doc(db, 'rooms', roomId));
+      
+      // Clear RTDB room data
+      await remove(ref(rtdb, `rooms/${roomId}`));
+      
+      // Clear localStorage
+      localStorage.removeItem('roomId');
+      
+      // Navigate to home
+      setRoomId(null);
+      setShowLanding(true);
+    } catch (error) {
+      console.error('Failed to end meeting:', error);
+    }
+  };
+
+  const speakText = (text: string) => {
+    if (!textToSpeechEnabled || !('speechSynthesis' in window)) return;
+    
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const exportTasksAsTXT = () => {
+    const completedTasks = tasks.filter(t => t.done);
+    const pendingTasks = tasks.filter(t => !t.done);
+    
+    let content = "=== TASK EXPORT ===\n\n";
+    content += `Export Date: ${new Date().toLocaleString()}\n\n`;
+    content += `COMPLETED TASKS (${completedTasks.length}):\n`;
+    content += "------------------------\n";
+    completedTasks.forEach((task, i) => {
+      content += `${i + 1}. [✓] ${task.text}\n`;
+    });
+    content += `\n`;
+    content += `PENDING TASKS (${pendingTasks.length}):\n`;
+    content += "------------------------\n";
+    pendingTasks.forEach((task, i) => {
+      content += `${i + 1}. [ ] ${task.text}\n`;
+    });
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tasks_${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportTasksAsPDF = () => {
+    // Simple PDF export using window.print with styled content
+    const completedTasks = tasks.filter(t => t.done);
+    const pendingTasks = tasks.filter(t => !t.done);
+    
+    const printWindow = window.open('', '', 'width=800,height=600');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Tasks Export</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; }
+              h1 { color: #333; }
+              .completed { color: #22c55e; }
+              .pending { color: #f59e0b; }
+              .task { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+            </style>
+          </head>
+          <body>
+            <h1>Task Export</h1>
+            <p><strong>Export Date:</strong> ${new Date().toLocaleString()}</p>
+            <h2>Completed Tasks (${completedTasks.length})</h2>
+            ${completedTasks.map(task => `<div class="task completed">✓ ${task.text}</div>`).join('')}
+            <h2>Pending Tasks (${pendingTasks.length})</h2>
+            ${pendingTasks.map(task => `<div class="task pending">○ ${task.text}</div>`).join('')}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+    }
   };
 
   const checkCollision = (nx: number, ny: number) => {
@@ -2217,7 +3222,9 @@ export default function App() {
   const createPeer = (userId: string, socketId: string, stream: MediaStream) => {
     const peer = new Peer({ initiator: true, trickle: false, stream });
     peer.on("signal", (signal) => {
-      socketRef.current?.emit("signal", { to: socketId, signal });
+      if (user?.uid && roomId) {
+        update(ref(rtdb, `rooms/${roomId}/signals/${socketId}/${user.uid}`), signal);
+      }
     });
     peer.on("stream", (remoteStream) => {
       setRemotePlayers(prev => ({
@@ -2231,7 +3238,9 @@ export default function App() {
   const addPeer = (incomingSignal: any, socketId: string, stream: MediaStream) => {
     const peer = new Peer({ initiator: false, trickle: false, stream });
     peer.on("signal", (signal) => {
-      socketRef.current?.emit("signal", { to: socketId, signal });
+      if (user?.uid && roomId) {
+        update(ref(rtdb, `rooms/${roomId}/signals/${socketId}/${user.uid}`), signal);
+      }
     });
     peer.on("stream", (remoteStream) => {
       setRemotePlayers(prev => ({
@@ -2244,186 +3253,158 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!userName || !avatarConfig || !roomId) return;
+    if (!userName || !avatarConfig || !roomId || !user?.uid) return;
 
-    console.log("Connecting to socket...", { userName, roomId });
-    socketRef.current = io({
-      path: "/socket.io/",
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      timeout: 20000
-    });
-    const socket = socketRef.current;
+    console.log("Connecting to Firebase RTDB...", { userName, roomId, userId: user.uid });
 
-    socket.on("connect_error", (err) => {
-      console.error("Socket connection error:", err.message);
-      console.error("Socket error details:", err);
-    });
+    const userId = user.uid;
+    const userRefPath = ref(rtdb, `rooms/${roomId}/users/${userId}`);
+    userRef.current = userRefPath;
+    const roomUsersRefPath = ref(rtdb, `rooms/${roomId}/users`);
+    const signalsRefPath = ref(rtdb, `rooms/${roomId}/signals/${userId}`);
 
-    socket.on("reconnect_attempt", (attempt) => {
-      console.log(`Socket reconnect attempt #${attempt}`);
-    });
-
+    // Initialize voice and set initial user data
     initVoice().then(() => {
-      console.log("Voice initialized, joining room...");
-      socket.emit("join", { 
-        name: userName, 
-        roomId, 
-        pos: posRef.current, 
-        angle: 180, 
+      console.log("Voice initialized, setting user presence in RTDB...");
+      set(userRefPath, {
+        name: userName,
+        pos: posRef.current,
+        angle: 0,
         avatarConfig,
         status,
         isPrivate,
-        zone: currentZone
+        zone: currentZone,
+        isWalking: false,
+        isSpeaking: false
       });
+
+      // Set onDisconnect to remove user when they leave
+      onDisconnect(userRefPath).remove();
     });
 
-    socket.on("connect", () => {
-      console.log("Socket connected:", socket.id);
+    // Listen for all users in the room
+    const usersUnsubscribe = onValue(roomUsersRefPath, (snapshot) => {
+      const users = snapshot.val();
+      if (!users) return;
+
+      const others: Record<string, any> = {};
+      Object.entries(users).forEach(([id, data]: [string, any]) => {
+        if (id !== userId) {
+          others[id] = data;
+        }
+      });
+
+      // Check for new users
+      Object.keys(others).forEach(id => {
+        if (!remotePlayersRef.current[id] && localStreamRef.current) {
+          console.log("New user detected, initiating peer:", id);
+          const peer = createPeer(id, id, localStreamRef.current!);
+          peersRef.current[id] = peer;
+        }
+      });
+
+      // Check for users that left
+      Object.keys(remotePlayersRef.current).forEach(id => {
+        if (!others[id]) {
+          console.log("User left:", id);
+          if (peersRef.current[id]) {
+            (peersRef.current[id] as any).destroy();
+            delete peersRef.current[id];
+          }
+          delete remotePlayersRef.current[id];
+          setRemotePlayers(prev => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }
+      });
+
+      // Update remote players with current data
+      Object.entries(others).forEach(([id, data]: [string, any]) => {
+        const prevPlayer = remotePlayersRef.current[id];
+        const zone = ZONES.find(z => 
+          data.pos.x >= z.bounds.left && data.pos.x <= z.bounds.right && 
+          data.pos.y >= z.bounds.top && data.pos.y <= z.bounds.bottom
+        );
+
+        const updatedPlayer = {
+          id,
+          name: data.name,
+          pos: data.pos,
+          angle: data.angle || 180,
+          isWalking: data.isWalking || false,
+          isSpeaking: data.isSpeaking || false,
+          status: data.status || 'available',
+          isPrivate: data.isPrivate || false,
+          zone: zone?.name || "Lobby",
+          avatarConfig: data.avatarConfig,
+          message: data.message,
+          emote: data.emote,
+          prevPos: prevPlayer?.pos,
+          lastUpdate: Date.now()
+        };
+
+        remotePlayersRef.current[id] = updatedPlayer;
+        setRemotePlayers(prev => ({ ...prev, [id]: updatedPlayer }));
+      });
+
       setIsConnected(true);
     });
 
-    socket.on("disconnect", () => {
-      setIsConnected(false);
-    });
+    // Listen for WebRTC signals
+    const signalsUnsubscribe = onValue(signalsRefPath, (snapshot) => {
+      const signals = snapshot.val();
+      if (!signals) return;
 
-    socket.on("init", (users: Record<string, any>) => {
-      console.log("Received init users:", Object.keys(users));
-      const others = { ...users };
-      if (socket.id) delete others[socket.id];
-      remotePlayersRef.current = others;
-      setRemotePlayers(others);
-      
-      // Newcomer initiates to everyone already in the room
-      if (localStreamRef.current) {
-        Object.keys(others).forEach(id => {
-          if (!peersRef.current[id]) {
-            console.log("Initiating peer to:", id);
-            const peer = createPeer(id, id, localStreamRef.current!);
-            peersRef.current[id] = peer;
-          }
-        });
-      }
-    });
-
-    socket.on("user:joined", (user: any) => {
-      console.log("User joined:", user.id);
-      remotePlayersRef.current[user.id] = user;
-      setRemotePlayers(prev => ({ ...prev, [user.id]: user }));
-      // We don't initiate here; we wait for their signal
-    });
-
-    socket.on("user:moved", (data: any) => {
-      const prevPlayer = remotePlayersRef.current[data.id];
-      if (!prevPlayer) return;
-
-      const zone = ZONES.find(z => 
-        data.pos.x >= z.bounds.left && data.pos.x <= z.bounds.right && 
-        data.pos.y >= z.bounds.top && data.pos.y <= z.bounds.bottom
-      );
-      
-      const updatedPlayer = { 
-        ...prevPlayer, 
-        ...data, 
-        zone: zone?.name || "Lobby",
-        prevPos: prevPlayer.pos,
-        lastUpdate: Date.now()
-      };
-
-      remotePlayersRef.current[data.id] = updatedPlayer;
-      setRemotePlayers(prev => ({ ...prev, [data.id]: updatedPlayer }));
-    });
-
-    socket.on("move:ack", (data: { seq: number, pos: Point }) => {
-      // Server-side reconciliation:
-      // Remove acknowledged inputs
-      pendingInputs.current = pendingInputs.current.filter(input => input.seq > data.seq);
-      
-      // If the server position differs significantly from our predicted position at that time,
-      // we could snap or lerp back. For now, we trust our local prediction but keep this for future physics.
-      const dist = Math.hypot(posRef.current.x - data.pos.x, posRef.current.y - data.pos.y);
-      if (dist > 50) {
-        // Correct position if desync is too large
-        posRef.current = data.pos;
-        setPos(data.pos);
-      }
-    });
-
-    socket.on("user:speaking", (data: any) => {
-      if (remotePlayersRef.current[data.id]) {
-        remotePlayersRef.current[data.id].isSpeaking = data.isSpeaking;
-        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], isSpeaking: data.isSpeaking } }));
-      }
-    });
-
-    socket.on("user:status", (data: any) => {
-      if (remotePlayersRef.current[data.id]) {
-        remotePlayersRef.current[data.id].status = data.status;
-        remotePlayersRef.current[data.id].isPrivate = data.isPrivate;
-        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], status: data.status, isPrivate: data.isPrivate } }));
-      }
-    });
-
-    socket.on("chat:message", (data: any) => {
-      if (remotePlayersRef.current[data.id]) {
-        remotePlayersRef.current[data.id].message = data.message;
-        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], message: data.message } }));
-      }
-      setTimeout(() => {
-        if (remotePlayersRef.current[data.id]) {
-          remotePlayersRef.current[data.id].message = undefined;
-          setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], message: undefined } }));
+      Object.entries(signals).forEach(([fromId, signal]: [string, any]) => {
+        console.log("Received signal from:", fromId);
+        if (peersRef.current[fromId]) {
+          peersRef.current[fromId].signal(signal);
+        } else if (localStreamRef.current) {
+          console.log("Creating non-initiator peer for:", fromId);
+          const peer = addPeer(signal, fromId, localStreamRef.current!);
+          peersRef.current[fromId] = peer;
         }
-      }, 5000);
-    });
-
-    socket.on("chat:emote", (data: any) => {
-      if (remotePlayersRef.current[data.id]) {
-        remotePlayersRef.current[data.id].emote = data.emote;
-        setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], emote: data.emote } }));
-      }
-      setTimeout(() => {
-        if (remotePlayersRef.current[data.id]) {
-          remotePlayersRef.current[data.id].emote = undefined;
-          setRemotePlayers(prev => ({ ...prev, [data.id]: { ...prev[data.id], emote: undefined } }));
-        }
-      }, 3000);
-    });
-
-    socket.on("user:left", (id: string) => {
-      console.log("User left:", id);
-      delete remotePlayersRef.current[id];
-      setRemotePlayers(prev => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
+        // Remove signal after processing
+        update(ref(rtdb, `rooms/${roomId}/signals/${userId}`), { [fromId]: null });
       });
-      if (peersRef.current[id]) {
-        peersRef.current[id].destroy();
-        delete peersRef.current[id];
-      }
     });
 
-    socket.on("signal", (data: any) => {
-      console.log("Received signal from:", data.from);
-      if (peersRef.current[data.from]) {
-        peersRef.current[data.from].signal(data.signal);
-      } else if (localStreamRef.current) {
-        console.log("Creating non-initiator peer for:", data.from);
-        const peer = addPeer(data.signal, data.from, localStreamRef.current!);
-        peersRef.current[data.from] = peer;
+    // Listen for activity status updates
+    const activityInterval = setInterval(() => {
+      if (userRefPath) {
+        update(userRefPath, { lastActivity: serverTimestamp() });
       }
-    });
+    }, 30000);
 
     return () => {
-      console.log("Cleaning up socket connection...");
-      socket.disconnect();
+      console.log("Cleaning up Firebase RTDB connection...");
+      usersUnsubscribe();
+      signalsUnsubscribe();
+      clearInterval(activityInterval);
+
+      // Remove user from room
+      remove(userRefPath);
+
       Object.values(peersRef.current).forEach(p => (p as any).destroy());
       peersRef.current = {};
       localStreamRef.current?.getTracks().forEach(t => t.stop());
+      setIsConnected(false);
     };
-  }, [userName, roomId, avatarConfig]);
+  }, [userName, roomId, user?.uid]);
+
+  // Separate useEffect to update avatarConfig without restarting connection
+  useEffect(() => {
+    if (!user?.uid || !roomId || !avatarConfig || !userRef.current) return;
+
+    update(userRef.current, {
+      avatarConfig,
+      name: userName,
+      status,
+      isPrivate
+    });
+  }, [avatarConfig, status, userName, isPrivate]);
 
   const updateZone = (x: number, y: number) => {
     const zone = ZONES.find(z => 
@@ -2480,14 +3461,16 @@ export default function App() {
       const currentSeq = seqRef.current++;
       pendingInputs.current.push({ seq: currentSeq, pos: posRef.current });
 
-      // Throttle emits to 20Hz to reduce network jitter and traffic
+      // Throttle updates to 20Hz to reduce network jitter and traffic
       if (Date.now() - lastEmitRef.current > 50) {
-        socketRef.current?.emit("move", { 
-          pos: posRef.current, 
-          angle: newAngle, 
-          isWalking: true,
-          seq: currentSeq
-        });
+        if (userRef.current) {
+          update(userRef.current, {
+            pos: posRef.current,
+            angle: newAngle,
+            isWalking: true,
+            zone: currentZoneRef.current
+          });
+        }
         lastEmitRef.current = Date.now();
       }
     }
@@ -2495,12 +3478,12 @@ export default function App() {
     if (isWalkingRef.current !== currentlyWalking) {
       isWalkingRef.current = currentlyWalking;
       setIsWalking(currentlyWalking);
-      if (!currentlyWalking) {
-        socketRef.current?.emit("move", { 
-          pos: posRef.current, 
-          angle: angleRef.current, 
+      if (!currentlyWalking && userRef.current) {
+        update(userRef.current, {
+          pos: posRef.current,
+          angle: angleRef.current,
           isWalking: false,
-          seq: seqRef.current++
+          zone: currentZoneRef.current
         });
       }
     }
@@ -2516,9 +3499,9 @@ export default function App() {
       keysRef.current[key] = true;
 
       // Keyboard Shortcuts
-      if (key === 's') {
+      if (key === 'escape') {
         e.preventDefault();
-        setShowSettings(true);
+        setShowSettings(prev => !prev);
       }
       if (key === 'c') {
         e.preventDefault();
@@ -2536,19 +3519,48 @@ export default function App() {
         }));
       }
 
+      if (key === 'f') {
+        // Toggle sitting when near a chair/desk
+        setIsSitting(prev => !prev);
+        setSittingPose(prev => prev === 'chair' ? null : 'chair');
+      }
+
       if (key === ' ' && localStreamRef.current) {
         localStreamRef.current.getAudioTracks().forEach(t => t.enabled = true);
         setIsSpeaking(true);
-        socketRef.current?.emit("speaking", true);
+        if (userRef.current) {
+          update(userRef.current, { isSpeaking: true });
+        }
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       keysRef.current[key] = false;
+      
+      // Reset angle to 0 (up) when movement keys are released
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'].includes(key)) {
+        const movementKeys = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'];
+        const anyKeyPressed = movementKeys.some(k => keysRef.current[k]);
+        if (!anyKeyPressed) {
+          angleRef.current = 0;
+          setAngle(0);
+          if (userRef.current) {
+            update(userRef.current, {
+              pos: posRef.current,
+              angle: 0,
+              isWalking: false,
+              zone: currentZoneRef.current
+            });
+          }
+        }
+      }
+
       if (key === ' ' && localStreamRef.current) {
         localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
         setIsSpeaking(false);
-        socketRef.current?.emit("speaking", false);
+        if (userRef.current) {
+          update(userRef.current, { isSpeaking: false });
+        }
       }
     };
 
@@ -2564,6 +3576,10 @@ export default function App() {
   }, [loop]);
 
   const handleLogout = async () => {
+    // Clear localStorage
+    localStorage.removeItem('userName');
+    localStorage.removeItem('avatarConfig');
+    localStorage.removeItem('roomId');
     await signOut(auth);
     window.location.reload();
   };
@@ -2582,38 +3598,206 @@ export default function App() {
     setShowLanding(false);
   };
 
-  if (showLanding && !roomId) return <LandingPage onStart={handleStart} user={user} />;
+  const handleJoin = async (name: string, room: string, avatar?: AvatarConfig, status?: string, password?: string) => {
+    // Sanitize inputs
+    const sanitizedName = sanitizeText(name);
+    const sanitizedRoom = sanitizeRoomId(room);
+    
+    let currentUser = user;
+    if (!currentUser) {
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        currentUser = result.user;
+        setUser(result.user);
+        setUserName(result.user.displayName || sanitizedName);
+      } catch (err) {
+        console.error("Auth failed", err);
+        setUserName(sanitizedName);
+      }
+    } else {
+      setUserName(sanitizedName);
+    }
+
+    if (password) {
+      const roomDoc = await getDoc(doc(db, 'rooms', room));
+      if (roomDoc.exists() && roomDoc.data().password && roomDoc.data().password !== password) {
+        alert("Incorrect room password!");
+        return;
+      }
+    }
+
+    if (avatar) setAvatarConfig(avatar);
+    if (status) setStatus(status as any);
+    setRoomId(room);
+
+    // Update Firestore with current room and presence
+    if (currentUser) {
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        roomId: room,
+        status: status || 'available',
+        lastSeen: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+    
+    initVoice();
+  };
+
+  const handleTutorialComplete = () => {
+    localStorage.setItem('tutorialCompleted', 'true');
+    setShowTutorial(false);
+    setTutorialStep(0);
+  };
+
+  const handleTutorialNext = () => {
+    setTutorialStep(prev => Math.min(prev + 1, 7));
+  };
+
+  const handleTutorialPrevious = () => {
+    setTutorialStep(prev => Math.max(prev - 1, 0));
+  };
+
+  const handleTutorialSkip = () => {
+    handleTutorialComplete();
+  };
+
+  if (showLanding && !roomId) return (
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+    </div>}>
+      <LandingPage onStart={handleStart} user={user} />
+    </Suspense>
+  );
+  if (showQuickStart) return <QuickStartWizard isOpen={showQuickStart} onClose={() => setShowQuickStart(false)} onComplete={handleJoin} user={user} onJoin={handleJoin} />;
   if (!userName || !roomId) return <EntryModal onJoin={handleJoin} user={user} />;
-  if (!avatarConfig) return <CharacterCustomizationModal onComplete={setAvatarConfig} user={user} userName={userName} />;
+  if (!avatarConfig) return <SimpleAvatarModal onComplete={setAvatarConfig} user={user} userName={userName} />;
 
   return (
-    <div className="min-h-screen bg-[#000000] flex items-center justify-center overflow-hidden font-sans selection:bg-white/20">
-      <SettingsModal 
-        isOpen={showSettings} 
-        onClose={() => setShowSettings(false)} 
-        userName={userName} 
-        roomId={roomId} 
+    <div className={`min-h-screen bg-[#000000] flex items-center justify-center overflow-hidden font-sans selection:bg-white/20 ${
+      textSize === 'small' ? 'text-sm' : textSize === 'large' ? 'text-lg' : 'text-base'
+    } ${isLightTheme ? 'invert' : ''}`}>
+      <StickyNotesPanel
+        isOpen={showStickyNotes}
+        onClose={() => setShowStickyNotes(false)}
+        notes={stickyNotes}
+        onAddNote={handleAddStickyNote}
+        onUpdateNote={handleUpdateStickyNote}
+        onDeleteNote={handleDeleteStickyNote}
+        onUpdatePosition={handleUpdateStickyNotePosition}
+      />
+      <FileDropZone
+        isOpen={showFileDropZone}
+        onClose={() => setShowFileDropZone(false)}
+        files={sharedFiles}
+        onUpload={handleFileUpload}
+        onDelete={handleDeleteFile}
+        isHost={isRoomHost}
+        onEndMeeting={handleEndMeeting}
+      />
+      <ChatHistoryPanel
+        isOpen={showChatHistory}
+        onClose={() => setShowChatHistory(false)}
+        messages={chatHistory}
+        searchQuery={chatSearchQuery}
+        onSearchChange={setChatSearchQuery}
+        onDeleteMessage={handleDeleteChatMessage}
+      />
+      <SideChatPanel 
+        messages={chatHistory}
+        userName={userName}
+      />
+      <TutorialModal
+        isOpen={showTutorial}
+        onClose={() => setShowTutorial(false)}
+        onComplete={handleTutorialComplete}
+        currentStep={tutorialStep}
+        onNext={handleTutorialNext}
+        onPrevious={handleTutorialPrevious}
+        onSkip={handleTutorialSkip}
+      />
+
+      {/* Fullscreen Emoji Overlay */}
+      <AnimatePresence>
+        {localEmote && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.5 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-[5000] flex items-center justify-center pointer-events-none"
+          >
+            <motion.div
+              animate={{ 
+                scale: [1, 1.2, 1],
+                rotate: [0, 10, -10, 0]
+              }}
+              transition={{ 
+                duration: 2,
+                repeat: 1,
+                ease: "easeInOut"
+              }}
+              className="text-[200px]"
+            >
+              {localEmote}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        userName={userName}
+        roomId={roomId}
         onLogout={handleLogout}
+        highContrastMode={highContrastMode}
+        onToggleHighContrast={() => setHighContrastMode(!highContrastMode)}
+        selectedTheme={selectedTheme}
+        onSetTheme={setSelectedTheme}
+        textSize={textSize}
+        onSetTextSize={setTextSize}
       />
       {/* Connection Overlay */}
       <AnimatePresence>
-        {!isConnected && roomId && (
-          <motion.div 
+        {!isConnected && roomId && userName && avatarConfig && user?.uid && (
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[5000] bg-black/60 backdrop-blur-sm flex items-center justify-center"
+            className="fixed inset-0 z-[2000] bg-black/80 backdrop-blur-sm flex items-center justify-center"
           >
-            <div className="bg-white p-8 rounded-[32px] shadow-2xl flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin" />
-              <p className="font-black uppercase tracking-widest text-xs">Connecting to Workspace...</p>
+            <div className="text-center">
+              <div className="flex justify-center mb-4">
+                <DotLoader
+                  frames={[
+                    [14, 7, 0, 8, 6, 13, 20],
+                    [14, 7, 13, 20, 16, 27, 21],
+                    [14, 20, 27, 21, 34, 24, 28],
+                    [27, 21, 34, 28, 41, 32, 35],
+                    [34, 28, 41, 35, 48, 40, 42],
+                    [34, 28, 41, 35, 48, 42, 46],
+                    [34, 28, 41, 35, 48, 42, 38],
+                    [34, 28, 41, 35, 48, 30, 21],
+                    [34, 28, 41, 48, 21, 22, 14],
+                    [34, 28, 41, 21, 14, 16, 27],
+                    [34, 28, 21, 14, 10, 20, 27],
+                    [28, 21, 14, 4, 13, 20, 27],
+                    [28, 21, 14, 12, 6, 13, 20],
+                    [28, 21, 14, 6, 13, 20, 11],
+                    [28, 21, 14, 6, 13, 20, 10],
+                    [14, 6, 13, 20, 9, 7, 21],
+                  ]}
+                  className="gap-0.5"
+                  dotClassName="bg-white/15 [&.active]:bg-white size-1.5"
+                />
+              </div>
+              <p className="text-white font-black text-sm">Connecting to workspace...</p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Mic Status Indicator */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-2 pointer-events-none">
+      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-2 pointer-events-none">
         {micError ? (
           <div className="bg-rose-500 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2">
             <MicOff className="w-3 h-3" />
@@ -2646,26 +3830,37 @@ export default function App() {
         onEditTask={handleEditTask}
         onOpenSettings={() => setShowSettings(true)}
         onMinimapClick={handleMinimapClick}
+        onOpenChatHistory={() => setShowChatHistory(true)}
+        onOpenStickyNotes={() => setShowStickyNotes(true)}
+        stickyNotes={stickyNotes}
+        connectionQuality={connectionQuality}
+        latency={latency}
+        onQuickTravel={handleQuickTravel}
+        isLightTheme={isLightTheme}
+        onToggleTheme={() => setIsLightTheme(!isLightTheme)}
+        onOpenFileDropZone={() => setShowFileDropZone(true)}
+        sharedFilesCount={sharedFiles.length}
+        textToSpeechEnabled={textToSpeechEnabled}
+        onToggleTextToSpeech={() => setTextToSpeechEnabled(!textToSpeechEnabled)}
+        onExportTasksTXT={exportTasksAsTXT}
+        onExportTasksPDF={exportTasksAsPDF}
+        isRoomHost={isRoomHost}
+        onEndMeeting={handleEndMeeting}
       />
       <UserMenu name={userName} playersCount={Object.keys(remotePlayers).length + 1} />
       
       <div 
         id="office"
-        className="relative bg-white border-[12px] border-black rounded-lg shadow-[0_60px_120px_rgba(0,0,0,0.5)] overflow-hidden"
+        className="relative border-[12px] border-black rounded-lg overflow-hidden transition-all duration-1000"
         style={{ 
           width: OFFICE_WIDTH, 
           height: OFFICE_HEIGHT, 
-          backgroundImage: 'radial-gradient(rgba(0,0,0,0.05) 1.5px, transparent 1.5px)', 
-          backgroundSize: '40px 40px' 
+          backgroundImage: `radial-gradient(${OFFICE_THEMES[selectedTheme].gridColor} 1.5px, transparent 1.5px)`, 
+          backgroundSize: '40px 40px',
+          backgroundColor: OFFICE_THEMES[selectedTheme].background,
+          boxShadow: OFFICE_THEMES[selectedTheme].shadow
         }}
       >
-        {/* Dynamic Lighting Overlay */}
-        <div 
-          className="absolute inset-0 z-[1100] pointer-events-none mix-blend-multiply opacity-20"
-          style={{ 
-            background: `radial-gradient(circle at ${pos.x}px ${pos.y}px, transparent 100px, #000 400px)` 
-          }}
-        />
         {/* Walls */}
         {WALLS.map((w, i) => (
           <div 
@@ -2686,7 +3881,7 @@ export default function App() {
 
         {/* Other Players */}
         {(Object.values(remotePlayers) as RemotePlayer[]).map(player => (
-          <RemotePlayerAvatar key={player.id} player={player} localPos={pos} localIsPrivate={isPrivate} localZone={currentZone} />
+          <RemotePlayerAvatar key={player.id} player={player} localPos={pos} localIsPrivate={isPrivate} localZone={currentZone} localStatus={status} />
         ))}
 
         {/* Doors */}
@@ -2695,27 +3890,44 @@ export default function App() {
         {/* Character Avatar */}
         <motion.div
           animate={{ x: pos.x, y: pos.y, rotate: angle }}
-          transition={{ type: 'spring', damping: 25, stiffness: 200, mass: 0.5 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 120, mass: 0.5 }}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="absolute z-[1000] -ml-[30px] -mt-[30px] w-[60px] h-[60px]"
+          className="absolute z-[1000] -ml-[26px] -mt-[26px] w-[52px] h-[52px]"
         >
-          {/* Private Bubble Visual */}
-          {isPrivate && (
-            <div className="absolute inset-0 -m-4 rounded-full border-2 border-dashed border-black/40 bg-black/5 animate-pulse" />
-          )}
-          {/* Voice Radius Indicator */}
+          {/* Voice Range Indicator - Always visible on hover, speaking makes it more prominent */}
           <AnimatePresence>
-            {isSpeaking && (
+            {(isHovered || isSpeaking) && (
               <motion.div 
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.5, opacity: 0 }}
-                className="absolute inset-0 -m-20 rounded-full bg-black/5 pointer-events-none"
-                style={{ width: VOICE_RADIUS * 2, height: VOICE_RADIUS * 2, left: -VOICE_RADIUS + 30, top: -VOICE_RADIUS + 30 }}
-              />
+                className="absolute rounded-full pointer-events-none"
+                style={{ 
+                  width: VOICE_RADIUS * 2, 
+                  height: VOICE_RADIUS * 2, 
+                  left: -VOICE_RADIUS + 20, 
+                  top: -VOICE_RADIUS + 20,
+                  background: isSpeaking 
+                    ? 'radial-gradient(circle, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.08) 50%, transparent 100%)'
+                    : 'radial-gradient(circle, rgba(100, 116, 139, 0.1) 0%, rgba(100, 116, 139, 0.03) 50%, transparent 100%)',
+                  border: isSpeaking 
+                    ? '2px solid rgba(34, 197, 94, 0.4)'
+                    : '2px dashed rgba(100, 116, 139, 0.3)'
+                }}
+              >
+                {/* Voice range label */}
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[8px] font-bold text-white/60 uppercase tracking-wider bg-black/50 px-2 py-1 rounded-full">
+                  Voice Range
+                </div>
+              </motion.div>
             )}
           </AnimatePresence>
+          
+          {/* Private Bubble Visual */}
+          {isPrivate && (
+            <div className="absolute inset-0 -m-4 rounded-full border-2 border-dashed border-black/40 bg-black/5 animate-pulse" />
+          )}
 
           <AnimatePresence>
             {(isHovered || isSpeaking) && (
@@ -2739,11 +3951,11 @@ export default function App() {
             config={avatarConfig} 
             isWalking={isWalking} 
             isSpeaking={isSpeaking} 
-            message={localMessage || undefined}
-            emote={localEmote || undefined}
             status={status}
             isLocal
             name={userName}
+            isSitting={isSitting}
+            sittingPose={sittingPose}
           />
         </motion.div>
       </div>
@@ -2779,15 +3991,7 @@ export default function App() {
                 exit={{ opacity: 0, scale: 0.8, y: 10 }}
                 className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-black/95 backdrop-blur-xl p-4 rounded-[32px] border border-white/10 shadow-2xl flex gap-3"
               >
-                {['👋', '👍', '😂', '🚀', '🔥', '❤️', '💡', '🎉'].map(e => (
-                  <button
-                    key={e}
-                    onClick={() => handleSendEmote(e)}
-                    className="text-2xl hover:scale-125 transition-transform p-2"
-                  >
-                    {e}
-                  </button>
-                ))}
+                <EmojiPicker onSelect={handleSendEmote} onClose={() => setShowEmotePicker(false)} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -2816,9 +4020,26 @@ export default function App() {
           </button>
         </div>
 
-        <div className={`flex items-center gap-3 px-6 py-3 rounded-2xl backdrop-blur-md border transition-all ${isSpeaking ? 'bg-black text-white shadow-xl' : 'bg-white/90 border-slate-200 text-slate-500'}`}>
-          {isSpeaking ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-          <span className="text-sm font-black uppercase tracking-widest">Hold Space to Talk</span>
+        {/* Custom Status Presets */}
+        <div className="bg-black p-1.5 rounded-2xl flex items-center gap-1 border border-white/10 shadow-2xl">
+          {[
+            { label: "In meeting", emoji: "📅" },
+            { label: "Lunch break", emoji: "🍔" },
+            { label: "Coffee break", emoji: "☕" },
+            { label: "BRB", emoji: "⏰" }
+          ].map(preset => (
+            <button
+              key={preset.label}
+              onClick={() => {
+                setCustomStatus(preset.label);
+                handleChangeStatus('busy');
+              }}
+              className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-white/40 hover:text-white flex items-center gap-1"
+              title={preset.label}
+            >
+              {preset.emoji}
+            </button>
+          ))}
         </div>
       </div>
     </div>
