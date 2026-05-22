@@ -1,95 +1,84 @@
-# WorkScape: The Next-Gen Virtual Office for Borderless Teams 🏢🚀
+# WorkScape: Spatial Virtual Office
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Firebase](https://img.shields.io/badge/Firebase-12.11-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
-[![WebRTC](https://img.shields.io/badge/WebRTC-P2P%20Voice-blue)](https://webrtc.org/)
+WorkScape is a high-performance, spatial virtual office platform designed for modern remote teams. It prioritizes digital sovereignty and local-first performance by utilizing a distributed architecture. This project enables teams to collaborate in a shared 2D environment with proximity-based voice chat, persistent shared state, and real-time interactions without the overhead or privacy concerns of centralized platforms.
 
-**WorkScape** is a spatial virtual office platform designed to dissolve the boundaries of remote work. By combining a beautiful 2D workspace with proximity-based voice chat, WorkScape restores the spontaneous interactions and natural presence of a physical office—without the commute or Zoom fatigue.
+## Core Philosophy
 
----
+The primary vision of WorkScape is to bring the spontaneity and natural connection of physical offices into the digital realm. By focusing on a local-first experience, the application ensures that critical communication data, such as real-time audio and private signaling, remains within the user's control.
 
-## 🌟 Key Pillars of WorkScape
+## Technical Architecture
 
-### 🎧 Proximity-Based Audio (Spatial Voice)
-Experience conversations as they happen in real life. As your avatar walks closer to a colleague, their voice becomes clearer; walk away, and it fades. This allows for natural "drive-by" check-ins and spontaneous watercooler moments.
+WorkScape is built using a modern technology stack designed for low latency and high scalability:
 
-### 🗺️ Intuitive Spatial Design
-Navigate a high-fidelity 2D office featuring:
-- **Meeting Rooms**: Step into Conference Room A or the Executive Suite for isolated, high-focus discussions.
-- **Private Bubbles**: Toggle private mode for a secure 1-on-1 audio workspace.
-- **Focus Zones**: High-intensity areas designed for deep work.
+- Frontend: React with TypeScript and Vite for a responsive, type-safe development experience.
+- Styling: Vanilla CSS and Tailwind CSS for high-fidelity glassmorphic UI components.
+- Animations: Motion (formerly Framer Motion) for smooth spatial transitions and interactive feedback.
+- Backend/Real-time: Firebase Suite including:
+    - Firestore: Used for persistent data such as user profiles, tasks, and room configurations.
+    - Real-time Database (RTDB): Utilized for high-frequency synchronization of avatar positions and signaling.
+    - Cloud Storage: Enables secure peer-to-peer file sharing within workspace rooms.
+    - Authentication: Google Auth for secure identity management.
+- Communication: Simple-Peer for WebRTC implementations, providing direct peer-to-peer spatial audio.
 
-### 🎭 Identity & Presence
-Express yourself with our **Human-Proportional Avatar System**. Customize hairstyles, outfits, and accessories, or sync directly with your Google profile for instant recognition.
+## Key Features
 
-### 🛠️ Collaborative Power Tools
-- **Live Sticky Notes**: Brainstorm in real-time with shared sticky notes that persist across sessions.
-- **Contextual Task Management**: Manage your daily flow with zone-based task completion (press 'E' in a zone to finish active tasks).
-- **Secure File Sharing**: Drag and drop files directly into the virtual workspace for instant team access.
+### Spatial Proximity Voice
+Users communicate through real-time audio that scales in volume based on their digital proximity. This enables natural "walk-up" conversations and reduces the friction associated with scheduled video calls.
 
----
+### Persistent Shared Workspaces
+The office environment is persistent. Sticky notes, task lists, and office configurations remain exactly where they were left, allowing for asynchronous collaboration and a consistent sense of place.
 
-## 🚀 Optimized for the Future (SEO, GEO, AEO, LLEOM)
+### Privacy and Isolation
+- Private Bubbles: Users can step into isolated areas for 1-on-1 or small group conversations that are digitally shielded from the rest of the office.
+- Status Management: Integrated status modes (Available, Busy, Focus) provide clear signals to the team about individual availability.
 
-WorkScape is built from the ground up to be discoverable by both humans and the next generation of AI-driven search engines.
+### Distributed File Sharing
+Collaborators can upload and share files directly within the workspace. These assets are scoped to the specific room and managed with granular permissions.
 
-- **SEO (Search Engine Optimization)**: Semantic HTML5 structure, lightning-fast SSR-ready landing pages, and comprehensive meta-tagging for maximum SERP visibility.
-- **GEO & AEO (Generative & Answer Engine Optimization)**: Structured JSON-LD schema data allows AI agents (like Gemini, ChatGPT, and Perplexity) to accurately index features, pricing, and technical specs.
-- **LLEOM (LLM Engine Optimization)**: Optimized technical documentation and clean code structure ensure that LLMs can effectively assist in development and integration workflows.
+## Local Setup and Deployment
 
----
-
-## 🛠️ Technical Masterpiece
-
-WorkScape leverages a cutting-edge, low-latency stack:
-- **Frontend**: React 19.0 + Vite 8.0 + TypeScript 5.8
-- **Styling**: Tailwind CSS 4.0 + Framer Motion 12.0 for premium aesthetics.
-- **Backend**: Firebase 12.11 (Auth, Firestore, RTDB) for real-time synchronization.
-- **Audio/Video**: Peer-to-peer WebRTC via Simple-Peer for ultra-low latency spatial audio.
-
----
-
-## 📦 Quick Start
+WorkScape is designed to be self-hosted, giving you complete ownership over your data and infrastructure.
 
 ### Prerequisites
-- Node.js 18+
-- Firebase Project (Auth, Firestore, RTDB enabled)
+- Node.js (v18 or higher)
+- npm or yarn
+- A Firebase Project (Google account required)
 
-### Local Development
-1. **Clone & Install**:
-   ```bash
-   git clone https://github.com/workscape/workscape.git
-   cd workscape
+### Installation Steps
+
+1. Clone the repository:
+   git clone https://github.com/ruthwikreddy/WorkScape
+   cd WorkScape
+
+2. Install dependencies:
    npm install
-   ```
 
-2. **Environment Setup**:
-   Copy `.env.example` to `.env` and populate your Firebase credentials.
+3. Environment Configuration:
+   Copy the example environment file and populate it with your Firebase configuration keys:
+   cp .env.example .env
 
-3. **Launch**:
-   ```bash
+   Required keys:
+   - VITE_FIREBASE_API_KEY
+   - VITE_FIREBASE_AUTH_DOMAIN
+   - VITE_FIREBASE_PROJECT_ID
+   - VITE_FIREBASE_STORAGE_BUCKET
+   - VITE_FIREBASE_MESSAGING_SENDER_ID
+   - VITE_FIREBASE_APP_ID
+   - VITE_FIREBASE_DATABASE_URL
+
+4. Running the Development Server:
    npm run dev
-   ```
 
----
+The application will be available at http://localhost:5173. Accessing the application locally will unlock the full workspace functionality.
 
-## 🔒 Security & Privacy
+## Security and Compliance
 
-Privacy isnt an afterthought—its our foundation.
-- **End-to-End Signaling**: We use Firebase RTDB for secure WebRTC signaling.
-- **Permission-First Architecture**: Granular Firestore rules ensure only authorized team members can access office rooms and shared files.
-- **Private Mode**: One-click isolation for sensitive conversations.
+WorkScape utilizes industry-standard encryption for signaling and peer-to-peer communication. Since the application is self-hosted, your data remains within your specific Firebase project and is governed by your own security rules.
 
----
+## Contribution Guidelines
 
-## 🗺️ Roadmap to the Future
+Contributions are welcome. Please ensure that all pull requests follow the established coding standards and include necessary tests. Maintain the architectural integrity by favoring composition over complex inheritance patterns.
 
-- [ ] **Phase 1**: Mobile & Tablet responsive architecture.
-- [ ] **Phase 2**: Native screen sharing and integrated whiteboarding.
-- [ ] **Phase 3**: AI-powered meeting summaries and voice-to-text task automation.
+## License
 
----
-
-Made with ❤️ by the WorkScape Team. 
-**Transform your remote culture today.**
+This project is licensed under the Apache-2.0 License.

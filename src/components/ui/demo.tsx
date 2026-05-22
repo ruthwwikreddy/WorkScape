@@ -1,0 +1,10 @@
+import React from 'react';
+import HeroSection from './glassmorphism-trust-hero';
+
+export default function HeroDemo() {
+  return (
+    <div className="w-full h-screen overflow-y-auto bg-zinc-950">
+      <HeroSection />
+    </div>
+  );
+}
