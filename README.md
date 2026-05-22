@@ -35,6 +35,23 @@ The office environment is persistent. Sticky notes, task lists, and office confi
 ### Distributed File Sharing
 Collaborators can upload and share files directly within the workspace. These assets are scoped to the specific room and managed with granular permissions.
 
+## Project Structure
+
+The codebase is organized into a modular structure to ensure maintainability and scalability:
+
+- /src/components: Contains the core React components.
+    - LandingPage.tsx: The primary informational entry point for the application.
+    - Workspace.tsx: The main application logic for the virtual office environment.
+    - /ui: Reusable UI components including glassmorphic elements, loaders, and skeletons.
+- /src/lib: Core library functions and utility modules.
+    - design-system.ts: Defines the visual constraints and styling patterns.
+    - gamification.ts: Logic for interactive elements and user engagement.
+    - responsive-layout.ts: Ensures consistent spatial rendering across different viewport sizes.
+    - sanitize.ts: Security utilities for input and file name sanitization.
+- /src/tokens: Design tokens for color palettes, spacing, and typography constants.
+- /public: Static assets including the default avatar and branding elements.
+- /functions: Firebase Cloud Functions for backend cleanup and room management.
+
 ## Local Setup and Deployment
 
 WorkScape is designed to be self-hosted, giving you complete ownership over your data and infrastructure.
