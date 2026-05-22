@@ -137,24 +137,24 @@ const OFFICE_THEMES = {
   }
 };
 
-const EMOJIS = [
-  '👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👏', '🙌', '💪',
-  '✨', '💯', '🤔', '👀', '🚀', '💡', '🎯', '⭐', '💙', '👋'
+const REACTIONS = [
+  'UP', 'LOVE', 'LAUGH', 'WOW', 'SAD', 'CELEBRATE', 'HOT', 'CLAP', 'HOORAY', 'STRONG',
+  'SPARK', '100', 'THINK', 'LOOK', 'ROCKET', 'IDEA', 'TARGET', 'STAR', 'BLUE', 'HELLO'
 ];
 
-const EmojiPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void; onClose: () => void }) => {
+const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) => void; onClose: () => void }) => {
   return (
     <div className="grid grid-cols-5 gap-3">
-      {EMOJIS.map((emoji) => (
+      {REACTIONS.map((reaction) => (
         <button
-          key={emoji}
+          key={reaction}
           onClick={() => {
-            onSelect(emoji);
+            onSelect(reaction);
             onClose();
           }}
           className="text-3xl hover:bg-slate-100 rounded-lg p-2 transition-colors w-12 h-12 flex items-center justify-center"
         >
-          {emoji}
+          {reaction}
         </button>
       ))}
     </div>
@@ -3507,10 +3507,10 @@ export default function Workspace() {
         e.preventDefault();
         document.getElementById('chat-input')?.focus();
       }
-      if (key === '1') setLocalEmote("👋");
-      if (key === '2') setLocalEmote("🔥");
-      if (key === '3') setLocalEmote("❤️");
-      if (key === '4') setLocalEmote("😂");
+      if (key === '1') setLocalEmote("HELLO");
+      if (key === '2') setLocalEmote("HOT");
+      if (key === '3') setLocalEmote("LOVE");
+      if (key === '4') setLocalEmote("LAUGH");
 
       if (key === 'e') {
         setTasks(prev => prev.map(t => {
@@ -3716,7 +3716,7 @@ export default function Workspace() {
         onSkip={handleTutorialSkip}
       />
 
-      {/* Fullscreen Emoji Overlay */}
+      {/* Fullscreen Reaction Overlay */}
       <AnimatePresence>
         {localEmote && (
           <motion.div
@@ -3991,7 +3991,7 @@ export default function Workspace() {
                 exit={{ opacity: 0, scale: 0.8, y: 10 }}
                 className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-black/95 backdrop-blur-xl p-4 rounded-[32px] border border-white/10 shadow-2xl flex gap-3"
               >
-                <EmojiPicker onSelect={handleSendEmote} onClose={() => setShowEmotePicker(false)} />
+                <ReactionPicker onSelect={handleSendEmote} onClose={() => setShowEmotePicker(false)} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -4023,10 +4023,10 @@ export default function Workspace() {
         {/* Custom Status Presets */}
         <div className="bg-black p-1.5 rounded-2xl flex items-center gap-1 border border-white/10 shadow-2xl">
           {[
-            { label: "In meeting", emoji: "📅" },
-            { label: "Lunch break", emoji: "🍔" },
-            { label: "Coffee break", emoji: "☕" },
-            { label: "BRB", emoji: "⏰" }
+            { label: "In meeting", reaction: "CALENDAR" },
+            { label: "Lunch break", reaction: "FOOD" },
+            { label: "Coffee break", reaction: "COFFEE" },
+            { label: "BRB", reaction: "CLOCK" }
           ].map(preset => (
             <button
               key={preset.label}
@@ -4037,7 +4037,7 @@ export default function Workspace() {
               className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-white/40 hover:text-white flex items-center gap-1"
               title={preset.label}
             >
-              {preset.emoji}
+              {preset.reaction}
             </button>
           ))}
         </div>

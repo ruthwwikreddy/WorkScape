@@ -83,6 +83,15 @@ const LandingPage = () => {
               </motion.p>
 
               <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4">
+                {typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                  <a 
+                    href="/workspace"
+                    className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl shadow-emerald-500/20"
+                  >
+                    Launch Workspace
+                    <Monitor className="w-5 h-5" />
+                  </a>
+                )}
                 <a 
                   href="#setup"
                   className="px-8 py-4 bg-black text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl shadow-black/10"
